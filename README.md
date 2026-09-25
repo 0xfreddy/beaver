@@ -2,6 +2,8 @@
 
 <img src="assets/logo.png" width="96" alt="Beaver" />
 
+**built by [0xfreddy](https://x.com/freddy_0x)**
+
 # Beaver
 
 **Turn everyday purchases into stock investments.**
@@ -13,34 +15,50 @@
 
 <!-- App Store URL still pending at launch -->
 <a href="#-try-it"><img src="assets/app-store.svg" alt="Download on the App Store" height="52" /></a>
-<a href="https://testflight.apple.com/join/PXFVSPG6"><img src="assets/testflight.png" alt="Join the TestFlight beta" height="52" /></a>
+<a href="https://testflight.apple.com/join/u2B71KkZ"><img src="assets/testflight.png" alt="Join the TestFlight beta" height="52" /></a>
 
 Beaver rounds up your everyday card purchases and invests the spare change
-into fractional stock — automatically, with friends, settled on-chain.
+into fractional stock — [xStocks](https://xstocks.fi) and
+[prestocks.io](https://prestocks.io) — automatically, settled on-chain.
 
 </div>
 
 ---
 
 <p align="center">
-  <img src="assets/screenshots/home-light.png" width="190" alt="Home with a roundup gauge" />
-  <img src="assets/screenshots/home-dark.png" width="190" alt="Roundup card in dark mode" />
-  <img src="assets/screenshots/rules-light.png" width="190" alt="Roundup rules" />
-  <img src="assets/screenshots/alias-dark.png" width="190" alt="Choosing your alias" />
+  <img src="assets/screenshots/home-dark.png" width="190" alt="Home with a roundup gauge" />
+  <img src="assets/screenshots/portfolio-dark.png" width="190" alt="Portfolio of fractional shares" />
+  <img src="assets/screenshots/rules-dark.png" width="190" alt="Choosing your roundup rule" />
 </p>
+
+**TL;DR:** connect any bank — 1,400+ institutions supported — or a crypto card
+([ether.fi](https://ether.fi), [Tuyo](https://www.tuyo.com)). Beaver detects
+your purchases, rounds up the spare change, and gets you stock — every roundup
+is routed on-chain through [Jupiter](https://jup.ag).
+
+## 🔌 Integrations
+
+| Logo | Integration | What Beaver uses it for |
+| :--- | :--- | :--- |
+| 🏦 | **Banking connection** | Link any bank from 1,400+ supported institutions — purchases are detected automatically. |
+| <a href="https://xstocks.fi"><img src="assets/integrations/xstocks.png" alt="xStocks" height="28" /></a> | **[xStocks](https://xstocks.fi)** | Tokenized public stocks, each backed 1:1 by a real share — the fractional stock your roundups buy. |
+| <a href="https://prestocks.io"><img src="assets/integrations/prestocks.png" alt="PreStocks" height="28" /></a> | **[PreStocks](https://prestocks.io)** | Tokenized pre-IPO shares of private companies. |
+| <a href="https://ether.fi"><img src="assets/integrations/etherfi.png" alt="ether.fi" height="28" /></a> | **[ether.fi](https://ether.fi)** | Crypto card — connect it as a roundup source and cash withdrawals out to it. |
+| <a href="https://www.tuyo.com"><img src="assets/integrations/tuyo.png" alt="Tuyo" height="28" /></a> | **[Tuyo](https://www.tuyo.com)** | Self-custodial USDC card — spend on it and Beaver rounds up the change. |
+| <a href="https://jup.ag"><img src="assets/integrations/jupiter.png" alt="Jupiter" height="28" /></a> | **[Jupiter](https://jup.ag)** | On-chain swap routing — each roundup executes as a USDC → xStocks swap. |
 
 ## 📱 Try it
 
 | Release channel | Version | Description | Link |
 | :--- | :--- | :--- | :--- |
 | Production | v0.1.0 | The same build as Beaver on the App Store. | 🚧 coming soon |
-| TestFlight | latest | Public beta — newest features, may contain bugs. | [Join the beta](https://testflight.apple.com/join/PXFVSPG6) |
+| TestFlight | latest | Public beta — newest features, may contain bugs. | [Join the beta](https://testflight.apple.com/join/u2B71KkZ) |
 | **Run locally** | — | **The full app in mock mode** — no keys, no backend. | [Build it yourself ↓](#-build-it-yourself) |
 
 ## ✨ What it does
 
 - 💳 **Roundups** — connect a card, and every purchase rounds up into your portfolio
-- 📈 **Fractional stock** — spare change flows into tokenized stocks (xStocks), settled on-chain
+- 📈 **Fractional stock** — spare change flows into tokenized stocks and pre-IPO shares (xStocks, PreStocks), settled on-chain
 - 👥 **Social** — invite friends with codes, climb leaderboards, keep your identity to an alias
 - 💸 **Withdrawals** — cash out to your own crypto card, gated by Face ID and jurisdiction checks
 - 🌗 **Native feel** — Liquid Glass on iOS 26, dark mode, haptics, and an offline mock account
