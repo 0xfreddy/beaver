@@ -1,0 +1,17 @@
+{
+  "name": "@roundups/domain",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./fixtures": "./src/fixtures.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@roundups/types": "workspace:*"
+  },
+  "devDependencies": {}
+}

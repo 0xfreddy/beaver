@@ -1,0 +1,29 @@
+{
+  "name": "beaver",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:mobile": "pnpm --filter @roundups/mobile dev",
+    "typecheck": "turbo typecheck",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
+    "mobile:export": "pnpm --filter @roundups/mobile export"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.0",
+    "@types/node": "^22.19.0",
+    "eslint": "^9.39.0",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.9.6",
+    "turbo": "^2.8.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.53.0",
+    "vitest": "^3.2.4"
+  }
+}

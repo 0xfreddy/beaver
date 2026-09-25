@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# expo
+.expo/
+dist/
+apps/*/dist/
+ios/
+android/
+
+# environment
+.env
+.env.local
+
+# tooling
+.turbo/
+*.tsbuildinfo
+
+# editors / os
+.DS_Store
+.vscode/
+.idea/

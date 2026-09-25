@@ -1,0 +1,154 @@
+{
+  "style": "DiceBear Glass",
+  "version": "9.2.4",
+  "license": {
+    "name": "CC0 1.0",
+    "url": "https://creativecommons.org/publicdomain/zero/1.0/"
+  },
+  "variants": [
+    {
+      "id": "glass-01",
+      "name": "Silver blue gradient",
+      "options": {
+        "seed": "roundups-curated-1",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "687c96"
+        ]
+      }
+    },
+    {
+      "id": "glass-02",
+      "name": "Rose slate gradient",
+      "options": {
+        "seed": "roundups-curated-2",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "9a7886"
+        ]
+      }
+    },
+    {
+      "id": "glass-03",
+      "name": "Amber dusk gradient",
+      "options": {
+        "seed": "roundups-curated-3",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "a28b65"
+        ]
+      }
+    },
+    {
+      "id": "glass-04",
+      "name": "Sea glass gradient",
+      "options": {
+        "seed": "roundups-curated-4",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "63918e"
+        ]
+      }
+    },
+    {
+      "id": "glass-05",
+      "name": "Lavender mist gradient",
+      "options": {
+        "seed": "roundups-curated-5",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "8d83a6"
+        ]
+      }
+    },
+    {
+      "id": "glass-06",
+      "name": "Copper glow gradient",
+      "options": {
+        "seed": "roundups-curated-6",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "a17965"
+        ]
+      }
+    },
+    {
+      "id": "glass-07",
+      "name": "Ocean ink gradient",
+      "options": {
+        "seed": "roundups-curated-7",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "536d87"
+        ]
+      }
+    },
+    {
+      "id": "glass-08",
+      "name": "Moss light gradient",
+      "options": {
+        "seed": "roundups-curated-8",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "7a8a71"
+        ]
+      }
+    },
+    {
+      "id": "glass-09",
+      "name": "Peach pearl gradient",
+      "options": {
+        "seed": "roundups-curated-9",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "aa8b81"
+        ]
+      }
+    },
+    {
+      "id": "glass-10",
+      "name": "Plum frost gradient",
+      "options": {
+        "seed": "roundups-curated-10",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "81718e"
+        ]
+      }
+    },
+    {
+      "id": "glass-11",
+      "name": "Sky stone gradient",
+      "options": {
+        "seed": "roundups-curated-11",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "7898ab"
+        ]
+      }
+    },
+    {
+      "id": "glass-12",
+      "name": "Graphite gradient",
+      "options": {
+        "seed": "roundups-curated-12",
+        "size": 384,
+        "radius": 50,
+        "backgroundColor": [
+          "707478"
+        ]
+      }
+    }
+  ]
+}

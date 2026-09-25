@@ -1,0 +1,41 @@
+diff --git a/ios/ConnectModule.swift b/ios/ConnectModule.swift
+index 024f4ca11e23e51b1deef03098638bcebec35454..520e578cf485ff5835fac5b3a156370dc3780d1d 100644
+--- a/ios/ConnectModule.swift
++++ b/ios/ConnectModule.swift	
+@@ -55,7 +55,8 @@ public class ConnectModule: Module {
+                 sessionToken: linkSessionToken,
+                 onSuccess: handleConnectSuccess(successType:),
+                 onExit: handleConnectExit(error:),
+-                onEvent: handleConnectEvent(event:)
++                onEvent: handleConnectEvent(event:),
++                settings: MKSettings(theme: ConnectModule.beaverTheme())
+             )
+ 
+             return MKLinkHandler(configuration: linkConfiguration)
+@@ -76,6 +77,26 @@ public class ConnectModule: Module {
+         }
+     }
+ 
++    /// Beaver brand theme: white primary buttons and loaders, dark label on the white button,
++    /// and the product's 12pt continuous corner radius. Fonts stay system to match the app.
++    private static func beaverTheme() -> MKTheme {
++        var theme = MKTheme()
++
++        var colors = MKColors()
++        colors.tint = .white
++        colors.primaryForeground = UIColor(
++            red: 27 / 255.0, green: 27 / 255.0, blue: 27 / 255.0, alpha: 1
++        )
++        theme.colors = colors
++
++        var button = theme.controls.button
++        button.height = 54
++        button.cornerStyle = .custom(12)
++        theme.controls.button = button
++
++        return theme
++    }
++
+     private func handleConnectSuccess(successType: MKLinkSuccessType) {
+         switch successType {
+         case let .linked(linkedInstitution):

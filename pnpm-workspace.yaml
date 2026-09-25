@@ -1,0 +1,14 @@
+packages:
+  - apps/*
+  - packages/*
+patchedDependencies:
+  '@moneykit/connect-react-native': patches/@moneykit__connect-react-native.patch
+  expo-constants@57.0.17: patches/expo-constants@57.0.17.patch
+  expo-updates@57.0.21: patches/expo-updates@57.0.21.patch
+allowBuilds:
+  esbuild: true
+  '@sentry/cli': true
+  bigint-buffer: false
+  bufferutil: false
+  utf-8-validate: false
+  '@shopify/react-native-skia': true

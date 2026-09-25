@@ -1,0 +1,60 @@
+{
+  "generatedAt": "2026-09-11",
+  "tool": "built-in image_gen.imagegen",
+  "assets": [
+    {
+      "name": "leaderboard-orbit",
+      "file": "leaderboard-orbit.png",
+      "source": "exec-9a5b4f4c-366f-4fa1-a9f8-81252fef16fd.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alphaRange": [
+        0,
+        255
+      ],
+      "prompt": "Original production social illustration for Roundups: three balanced rounded vertical sculptural forms at ascending heights, three satin silver/graphite smooth pill-like stones grouped together, NOT coins, NOT a wallet, no flat discs; one delicate open orbit curve. Match existing Roundups silver/graphite satin brushed sculptural artwork with neutral soft upper-left light. Transparent alpha background. Square composition, generous margins, no floor plane, text, currency, logos, watermark, UI or implied financial returns. Near frontal three-quarter camera. leaderboard-orbit. Use the reference only for material and lighting, not object shape.",
+      "reference": "friends-circle (material reference)"
+    },
+    {
+      "name": "invite-link",
+      "file": "invite-link.png",
+      "source": "exec-1ba1c147-8494-4ec7-aa45-78a4db2f14a3.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alphaRange": [
+        0,
+        255
+      ],
+      "prompt": "Create a PNG CUTOUT with genuine transparent alpha background, not a checkerboard picture. Subject: exactly two open interlocking C-shaped rings sculpted in brushed satin silver and graphite. Both openings clearly visible. Restrained premium monochrome 3D editorial sculpture for an iOS app. Soft upper-left neutral studio light, broad silver highlights, smooth rounded ends, near frontal camera. Entire object centered inside 70% of the square with generous empty transparent margins for rotation. Background must be empty alpha=0. No text, watermark, floor, checkerboard pattern, wallpaper, logos or currency symbols. Artwork only.",
+      "reference": "none; shared written art direction"
+    },
+    {
+      "name": "friends-circle",
+      "file": "friends-circle.png",
+      "source": "exec-d3527180-2830-49f7-9df6-4986d4ed600d.png",
+      "dimensions": [
+        1254,
+        1254
+      ],
+      "mode": "RGBA",
+      "alphaRange": [
+        0,
+        255
+      ],
+      "prompt": "Use case: stylized-concept. Production transparent square raster asset for Roundups named friends-circle: a small welcoming group of five rounded graphite and satin silver pebble-like sculptural forms arranged as a loose circle with a little open space at center. Match the supplied wallet-token reference ONLY for brushed satin materials, neutral palette, sculptural proportions and soft upper-left studio lighting. No wallet or token replication. Near frontal slight three-quarter camera, optical center in square, entire composition fits inside centered 65% diameter circle for spin clearance. Genuine transparent alpha background, no floor, no opaque square, no text, numerals, currency signs, logos, arrows, charts, watermark or implied investment returns. High detail and clean silhouette at 96px.",
+      "reference": "existing wallet-token (material reference)"
+    }
+  ],
+  "discarded": [
+    "Initial orbit resembled wallet/token; replaced with ascending forms.",
+    "Initial invite had closed rings; revised.",
+    "Two subsequent invite variants had painted checkerboard RGB backgrounds; rejected. Final new generation has real alpha."
+  ],
+  "interaction": "InteractiveArt: all three new social assets. Existing avatars/company logos/charts excluded. Phase 3 applies shared component to gallery and audits other decorative art."
+}
