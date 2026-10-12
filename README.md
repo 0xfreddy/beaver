@@ -19,7 +19,7 @@ iOS · Android · Solana Mobile
 <a href="#-try-it"><img src="assets/app-store.svg" alt="Download on the App Store" height="52" /></a>
 <a href="https://testflight.apple.com/join/u2B71KkZ"><img src="assets/testflight.png" alt="Join the TestFlight beta" height="52" /></a>
 
-[**Download Android / Solana Mobile APK — v0.1.0 (7)**](https://github.com/0xfreddy/beaver/releases/download/android-v0.1.0-7/Beaver-0.1.0-7.apk)
+[**Download Android / Solana Mobile APK — v0.1.0 (7)**](https://expo.dev/artifacts/eas/G2jlkLxex-8m4VfnBPkY-8tmXJkbda3A9E2KTe0uy3A.apk)
 
 [Release notes, Play bundle and checksums](https://github.com/0xfreddy/beaver/releases/tag/android-v0.1.0-7).
 
@@ -59,7 +59,7 @@ is routed on-chain through [Jupiter](https://jup.ag).
 | :--- | :--- | :--- | :--- |
 | App Store | — | Public listing pending. | 🚧 coming soon |
 | TestFlight | latest | Public beta — newest features, may contain bugs. | [Join the beta](https://testflight.apple.com/join/u2B71KkZ) |
-| Android / Solana Mobile | v0.1.0 (7) | Signed standalone live APK; no Metro required. | [Download APK](https://github.com/0xfreddy/beaver/releases/download/android-v0.1.0-7/Beaver-0.1.0-7.apk) |
+| Android / Solana Mobile | v0.1.0 (7) | Signed standalone live APK; no Metro required. | [Download APK](https://expo.dev/artifacts/eas/G2jlkLxex-8m4VfnBPkY-8tmXJkbda3A9E2KTe0uy3A.apk) |
 | **Run locally** | — | **The full app in mock mode** — no keys, no backend. | [Build it yourself ↓](#-build-it-yourself) |
 
 The Android APK also targets Solana Mobile devices with an MWA-compatible wallet.
