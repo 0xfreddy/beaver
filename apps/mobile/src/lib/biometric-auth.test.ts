@@ -5,7 +5,8 @@ const native = vi.hoisted(() => ({
   isEnrolledAsync: vi.fn(async () => false),
   authenticateAsync: vi.fn(async () => ({ success: true })),
 }));
-vi.mock('react-native', () => ({ Platform: { OS: 'ios' } }));
+const platform = vi.hoisted(() => ({ OS: 'ios' }));
+vi.mock('react-native', () => ({ Platform: platform }));
 vi.mock('expo-local-authentication', () => ({
   ...native,
   AuthenticationType: { FINGERPRINT: 1, FACIAL_RECOGNITION: 2 },
@@ -28,6 +29,8 @@ import {
 } from './biometric-auth';
 beforeEach(() => {
   store.clear();
+  platform.OS = 'ios';
+  native.supportedAuthenticationTypesAsync.mockResolvedValue([2]);
   native.getEnrolledLevelAsync.mockResolvedValue(0);
   native.isEnrolledAsync.mockResolvedValue(false);
 });
@@ -56,4 +59,14 @@ describe('biometric setup', () => {
     expect(await hasSeenBiometricOffer('did:privy:first')).toBe(true);
     expect(await hasSeenBiometricOffer('did:privy:second')).toBe(false);
   });
+});
+
+it.each([
+  [1, 'Fingerprint'],
+  [2, 'Face unlock'],
+] as const)('uses Android names for authentication type %s', async (type, label) => {
+  platform.OS = 'android';
+  native.supportedAuthenticationTypesAsync.mockResolvedValue([type]);
+  native.isEnrolledAsync.mockResolvedValue(true);
+  expect(await biometricAvailability()).toMatchObject({ available: true, enrolled: true, label });
 });

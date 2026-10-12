@@ -14,6 +14,7 @@ import { ProfileProvider } from './profile-provider';
 import { AuthProvider } from './auth-provider';
 import { OnchainPreviewProvider } from './onchain-preview-provider';
 import { MockDataProvider } from './mock-data-provider';
+import { AppUpdateGate } from '../components/app-update-gate';
 
 class ErrorBoundary extends Component<PropsWithChildren, { failed: boolean }> {
   override state = { failed: false };
@@ -78,18 +79,20 @@ export function AppProviders({ children }: PropsWithChildren) {
         <ThemeProvider>
           <ErrorBoundary>
             <QueryClientProvider client={queryClient}>
-              <AuthProvider>
-                <OnboardingProvider>
-                  <AutoActivateInvesting />
-                  <MockDataProvider>
-                    <OnchainPreviewProvider>
-                      <ProfileProvider>
-                        <NavigationTheme>{children}</NavigationTheme>
-                      </ProfileProvider>
-                    </OnchainPreviewProvider>
-                  </MockDataProvider>
-                </OnboardingProvider>
-              </AuthProvider>
+              <AppUpdateGate>
+                <AuthProvider>
+                  <OnboardingProvider>
+                    <AutoActivateInvesting />
+                    <MockDataProvider>
+                      <OnchainPreviewProvider>
+                        <ProfileProvider>
+                          <NavigationTheme>{children}</NavigationTheme>
+                        </ProfileProvider>
+                      </OnchainPreviewProvider>
+                    </MockDataProvider>
+                  </OnboardingProvider>
+                </AuthProvider>
+              </AppUpdateGate>
             </QueryClientProvider>
           </ErrorBoundary>
         </ThemeProvider>

@@ -1,29 +1,28 @@
+import { DynamicNotificationHost } from '../components/dynamic-notification-host';
 import { AchievementSync } from '../components/achievement-sync';
 import { InviteContinuation } from '../components/invite-continuation';
-import { router, Stack, usePathname } from 'expo-router';
+import { router, Stack, usePathname, type Href } from 'expo-router';
 import { AppState, type AppStateStatus, Platform, Pressable, View } from 'react-native';
 import { AppProviders } from '../providers/app-providers';
 import { captureScreenView, initializeMobileTelemetry } from '../lib/telemetry';
+import { useNotifications } from '../lib/use-notifications';
 import { useEffect, useRef, useState } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts } from 'expo-font';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { useAuth } from '../providers/auth-provider';
+import { useBiometricLock } from '../lib/use-biometric-lock';
+import { useBankRecovery } from '../lib/use-bank-recovery';
 import { useOnboarding } from '../providers/onboarding-provider';
 import { useTheme } from '../theme';
-import { Button, Type } from '../components/ui';
+import { Type } from '../components/ui';
+import { BrandedWaitSurface } from '../components/branded-wait-surface';
 import {
   onboardingRedirect,
   shouldShowOnboarding,
   shouldWaitForSession,
 } from '../lib/auth-routing';
-import {
-  authenticateWithBiometrics,
-  biometricAvailability,
-  isBiometricUnlockEnabled,
-  subscribeBiometricAuthSettled,
-  subscribeBiometricPreference,
-} from '../lib/biometric-auth';
+import { BiometricUnlock } from '../components/biometric-unlock';
 
 function CloseSheet() {
   return (
@@ -49,16 +48,16 @@ export default function RootLayout() {
     Inter_500Medium,
     Inter_600SemiBold,
   });
-  if (!fontsLoaded && !fontError) return null;
   return (
     <AppProviders>
-      <Navigation />
+      <Navigation fontsReady={fontsLoaded || !!fontError} />
     </AppProviders>
   );
 }
 
-function Navigation() {
-  const { ready, completedUserIds } = useOnboarding();
+function Navigation({ fontsReady }: { fontsReady: boolean }) {
+  useBankRecovery();
+  const { ready, completedUserIds, resumePath, rememberPath } = useOnboarding();
   const auth = useAuth();
   const pathname = usePathname();
   const screenSince = useRef<{ path: string; at: number } | null>(null);
@@ -72,100 +71,50 @@ function Navigation() {
     screenSince.current = { path: pathname, at: now };
   }, [pathname]);
   const { isDark, colors } = useTheme();
-  const [biometricChecked, setBiometricChecked] = useState(false);
-  const [biometricRequired, setBiometricRequired] = useState(false);
-  const [biometricLocked, setBiometricLocked] = useState(false);
-  const [biometricLabel, setBiometricLabel] = useState('Face ID');
-  const [biometricOfferEligible, setBiometricOfferEligible] = useState(false);
   const [appState, setAppState] = useState<AppStateStatus>(AppState.currentState);
   const inOnboarding = pathname.startsWith('/onboarding');
   const userId = auth.user?.id ?? null;
   const hasSession = auth.session !== null;
+  const {
+    biometricChecked,
+    biometricRequired,
+    biometricLocked,
+    biometricLabel,
+    biometricOfferEligible,
+    setBiometricOfferEligible,
+    setBiometricLocked,
+  } = useBiometricLock(userId);
   const locallyCompleted = userId !== null && completedUserIds.includes(userId);
   const sessionResolutionPending = shouldWaitForSession(userId, hasSession, auth.isSyncing);
   const sessionCompletionPending = sessionResolutionPending && !locallyCompleted;
-  const readyToRender = ready && auth.isReady;
+  const readyToRender = fontsReady && ready && auth.isReady;
   const waitingBehindSplash = sessionResolutionPending && !inOnboarding;
   const needsOnboarding = shouldShowOnboarding(
     completedUserIds,
     userId,
     auth.session?.user.onboardingState ?? null,
   );
-  const onboardingDestination = onboardingRedirect(
+  const redirect = onboardingRedirect(
     pathname,
     needsOnboarding,
     sessionCompletionPending,
     userId !== null,
   );
+  const onboardingDestination =
+    redirect === '/onboarding/invite-code' && resumePath ? resumePath : redirect;
   useEffect(() => {
-    let active = true;
-    setBiometricChecked(false);
-    setBiometricRequired(false);
-    setBiometricLocked(false);
-    setBiometricOfferEligible(false);
-    if (!hasSession || !userId) {
-      setBiometricChecked(true);
-      return () => {
-        active = false;
-      };
-    }
-    // Face ID stays strictly opt-in; until it is enabled, each session offers
-    // the setup sheet once after the user settles into the main app.
-    const check = (lockWhenRequired: boolean) =>
-      Promise.all([isBiometricUnlockEnabled(userId), biometricAvailability()])
-        .then(([enabled, availability]) => {
-          if (!active) return;
-          setBiometricLabel(availability.label);
-          const required = enabled && availability.available;
-          setBiometricRequired(required);
-          setBiometricOfferEligible(!enabled && availability.available);
-          if (lockWhenRequired || !required) setBiometricLocked(required);
-        })
-        .catch(() => {
-          if (!active) return;
-          setBiometricRequired(false);
-          setBiometricOfferEligible(false);
-          if (lockWhenRequired) setBiometricLocked(false);
-        })
-        .finally(() => {
-          if (active) setBiometricChecked(true);
-        });
-    void check(true);
-    // Keep the lock requirement current when Face ID is toggled from settings
-    // while the app is open, without locking the user mid-session.
-    const unsubscribe = subscribeBiometricPreference(() => void check(false));
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, [hasSession, userId]);
+    if (readyToRender && userId && !onboardingDestination && pathname.startsWith('/onboarding/'))
+      rememberPath(pathname);
+    // Record route transitions, not provider callback identity changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname, readyToRender, userId, onboardingDestination]);
   useEffect(() => {
     const subscription = AppState.addEventListener('change', setAppState);
     return () => subscription.remove();
   }, []);
   useEffect(() => {
-    if (!biometricRequired) return;
-    const lockNow = () => setBiometricLocked(true);
-    const subscription = AppState.addEventListener('change', (state) => {
-      // System permission dialogs and Face ID make iOS inactive without the
-      // user leaving. Only backgrounding should require another unlock.
-      if (state === 'background') lockNow();
-    });
-    // A prompt settling in the background must never reveal account content.
-    const unsubscribe = subscribeBiometricAuthSettled(() => {
-      if (AppState.currentState === 'background') lockNow();
-    });
-    return () => {
-      subscription.remove();
-      unsubscribe();
-    };
-  }, [biometricRequired]);
-  useEffect(() => {
-    if (readyToRender && !waitingBehindSplash && biometricChecked) void SplashScreen.hideAsync();
-  }, [readyToRender, waitingBehindSplash, biometricChecked]);
-  useEffect(() => {
     if (readyToRender && biometricChecked && onboardingDestination)
-      router.replace(onboardingDestination);
+      router.replace(onboardingDestination as Href);
   }, [readyToRender, biometricChecked, onboardingDestination]);
   const onMainAppSurface =
     pathname === '/' ||
@@ -199,19 +148,54 @@ function Navigation() {
     biometricChecked,
     biometricLocked,
     biometricOfferEligible,
+    setBiometricOfferEligible,
     needsOnboarding,
     onMainAppSurface,
     onboardingDestination,
     readyToRender,
     waitingBehindSplash,
   ]);
-  const locked = biometricLocked && hasSession && !inOnboarding && !needsOnboarding;
-  const obscured =
-    !readyToRender || waitingBehindSplash || !biometricChecked || !!onboardingDestination || locked;
+  const locked =
+    biometricLocked && !!userId && !inOnboarding && (locallyCompleted || !needsOnboarding);
+  const resolvingAccount =
+    !readyToRender || waitingBehindSplash || !biometricChecked || !!onboardingDestination;
+  const privacyCovered = biometricRequired && !!userId && appState !== 'active';
+  const obscured = resolvingAccount || locked || privacyCovered;
+  useNotifications({
+    canNavigate: !obscured && !needsOnboarding && hasSession && appState === 'active',
+    canOffer:
+      !obscured &&
+      !needsOnboarding &&
+      hasSession &&
+      !biometricOfferEligible &&
+      onMainAppSurface &&
+      appState === 'active',
+  });
+  const splashHidden = useRef(false);
+  const hideNativeSplash = () => {
+    if (splashHidden.current) return;
+    splashHidden.current = true;
+    void SplashScreen.hideAsync();
+  };
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View onLayout={hideNativeSplash} style={{ flex: 1, backgroundColor: colors.background }}>
+      <DynamicNotificationHost
+        enabled={
+          !obscured &&
+          !needsOnboarding &&
+          hasSession &&
+          !biometricOfferEligible &&
+          appState === 'active'
+        }
+      />
       {readyToRender && !onboardingDestination ? <InviteContinuation /> : null}
-      {readyToRender ? <AchievementSync /> : null}
+      {readyToRender ? (
+        <AchievementSync
+          enabled={
+            !obscured && !needsOnboarding && !biometricOfferEligible && appState === 'active'
+          }
+        />
+      ) : null}
       <View
         style={{ flex: 1, opacity: obscured ? 0 : 1 }}
         pointerEvents={obscured ? 'none' : 'auto'}
@@ -239,18 +223,25 @@ function Navigation() {
               title: '',
               headerShown: false,
               presentation: 'formSheet',
-              sheetAllowedDetents: [0.85, 1],
+              sheetAllowedDetents: [0.65, 1],
               sheetGrabberVisible: true,
             }}
           />
-          <Stack.Screen name="saltedge/link" options={{ headerShown: false }} />
+          <Stack.Screen
+            name="saltedge/link"
+            options={{ headerShown: false, presentation: 'fullScreenModal' }}
+          />
+          <Stack.Screen
+            name="bank-picker"
+            options={{ headerShown: false, presentation: 'fullScreenModal' }}
+          />
           <Stack.Screen name="saltedge/callback" options={{ headerShown: false }} />
           <Stack.Screen name="invite" options={{ title: 'Invitation' }} />
           <Stack.Screen
             name="invite-friends"
             options={{
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown: Platform.OS === 'web',
               headerRight: CloseSheet,
               presentation: 'formSheet',
               sheetAllowedDetents: [0.92, 1],
@@ -258,6 +249,23 @@ function Navigation() {
             }}
           />
           <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Beaver' }} />
+          <Stack.Screen
+            name="notification/[id]"
+            options={{
+              headerShown: false,
+              presentation: 'formSheet',
+              sheetAllowedDetents: [1],
+              sheetGrabberVisible: true,
+            }}
+          />
+          <Stack.Screen
+            name="notification-setup"
+            options={{
+              headerShown: false,
+              presentation: 'fullScreenModal',
+              animation: 'slide_from_bottom',
+            }}
+          />
           <Stack.Screen
             name="biometric-setup"
             options={{
@@ -273,7 +281,7 @@ function Navigation() {
             name="transaction/[id]"
             options={{
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown: Platform.OS === 'web',
               presentation: 'formSheet',
               sheetAllowedDetents: [0.92, 1],
               sheetGrabberVisible: true,
@@ -324,7 +332,7 @@ function Navigation() {
             name="mock-data"
             options={{
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown: Platform.OS === 'web',
               headerRight: CloseSheet,
               presentation: 'formSheet',
               sheetAllowedDetents: [0.58, 0.72],
@@ -344,9 +352,18 @@ function Navigation() {
             name="settings/[section]"
             options={({ route }) => ({
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown:
+                Platform.OS === 'web' ||
+                (Platform.OS === 'android' &&
+                  (route.params as { section?: string } | undefined)?.section === 'fallback'),
               headerRight: CloseSheet,
-              presentation: 'formSheet',
+              // Android's sheet drag recognizer competes with the nested stock
+              // list. A regular modal leaves vertical gestures with the list.
+              presentation:
+                Platform.OS === 'android' &&
+                (route.params as { section?: string } | undefined)?.section === 'fallback'
+                  ? 'modal'
+                  : 'formSheet',
               sheetAllowedDetents:
                 (route.params as { section?: string } | undefined)?.section === 'manual'
                   ? [0.42, 0.65]
@@ -385,7 +402,7 @@ function Navigation() {
             name="profile/alias"
             options={{
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown: Platform.OS === 'web',
               headerRight: CloseSheet,
               presentation: 'formSheet',
               sheetAllowedDetents: [0.92, 1],
@@ -398,7 +415,7 @@ function Navigation() {
               title: '',
               headerShown: false,
               presentation: 'formSheet',
-              sheetAllowedDetents: [0.85, 1],
+              sheetAllowedDetents: [0.65, 1],
               sheetGrabberVisible: true,
             }}
           />
@@ -415,6 +432,10 @@ function Navigation() {
             options={{ headerShown: false, animation: 'fade' }}
           />
           <Stack.Screen
+            name="onboarding/explainer"
+            options={{ headerShown: false, animation: 'fade' }}
+          />
+          <Stack.Screen
             name="onboarding/bank"
             options={{ headerShown: false, animation: 'fade' }}
           />
@@ -422,7 +443,7 @@ function Navigation() {
             name="onboarding/crypto-card-help"
             options={{
               title: '',
-              headerShown: Platform.OS !== 'ios',
+              headerShown: Platform.OS === 'web',
               headerRight: CloseSheet,
               presentation: 'formSheet',
               sheetAllowedDetents: [0.92, 1],
@@ -443,87 +464,15 @@ function Navigation() {
           />
         </Stack>
       </View>
+      {resolvingAccount || privacyCovered ? (
+        <BrandedWaitSurface accessibilityLabel="Loading Beaver" still />
+      ) : null}
       {locked ? (
         <View style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0 }}>
           <BiometricUnlock
             label={biometricLabel}
             onUnlock={() => setBiometricLocked(false)}
             onUseAccount={() => auth.logout()}
-          />
-        </View>
-      ) : null}
-    </View>
-  );
-}
-
-function BiometricUnlock({
-  label,
-  onUnlock,
-  onUseAccount,
-}: {
-  label: string;
-  onUnlock: () => void;
-  onUseAccount: () => Promise<void>;
-}) {
-  const { colors } = useTheme();
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const autoPrompted = useRef(false);
-  const promptInFlight = useRef(false);
-  async function unlock() {
-    if (promptInFlight.current || AppState.currentState !== 'active') return;
-    promptInFlight.current = true;
-    autoPrompted.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      await authenticateWithBiometrics(`Unlock Beaver with ${label}`);
-      if ((AppState.currentState as AppStateStatus) !== 'background') onUnlock();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Authentication failed. Please retry.');
-    } finally {
-      promptInFlight.current = false;
-      setBusy(false);
-    }
-  }
-  useEffect(() => {
-    let frame: number | undefined;
-    const promptWhenActive = () => {
-      if (AppState.currentState !== 'active' || autoPrompted.current) return;
-      frame = requestAnimationFrame(() => void unlock());
-    };
-    promptWhenActive();
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'background') autoPrompted.current = false;
-      if (state === 'active') promptWhenActive();
-    });
-    return () => {
-      if (frame !== undefined) cancelAnimationFrame(frame);
-      subscription.remove();
-    };
-    // One automatic attempt per foreground visit; failed attempts expose retry.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center' }}>
-      {error ? (
-        <View style={{ paddingHorizontal: 28, gap: 18 }}>
-          <Type variant="title" accessibilityRole="header">
-            Try unlocking again
-          </Type>
-          <Type muted>{label} protects this account on this device.</Type>
-          {error ? <Type accessibilityRole="alert">{error}</Type> : null}
-          <Button title={`Unlock with ${label}`} loading={busy} onPress={() => void unlock()} />
-          <Button
-            title="Use account sign-in"
-            secondary
-            disabled={busy}
-            onPress={() => {
-              setBusy(true);
-              void onUseAccount()
-                .catch(() => setError('Couldn’t sign out. Please try again.'))
-                .finally(() => setBusy(false));
-            }}
           />
         </View>
       ) : null}

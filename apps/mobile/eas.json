@@ -26,6 +26,54 @@
       "env": {
         "APP_ENV": "production"
       }
+    },
+    "android-demo": {
+      "distribution": "internal",
+      "developmentClient": false,
+      "channel": "android-demo",
+      "environment": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_ENV": "staging",
+        "APP_UPDATES_DISABLED": "true",
+        "EXPO_PUBLIC_API_URL": "https://api.trybeaver.app",
+        "EXPO_PUBLIC_MOCK_DATA_ENABLED": "true",
+        "EXPO_PUBLIC_SOLANA_NETWORK": "devnet"
+      }
+    },
+    "hackathon": {
+      "extends": "production",
+      "distribution": "internal",
+      "developmentClient": false,
+      "channel": "hackathon",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_UPDATES_DISABLED": "true",
+        "EXPO_PUBLIC_MOCK_DATA_ENABLED": "false",
+        "EXPO_PUBLIC_INTERNAL_ACCESS_ENABLED": "false",
+        "EXPO_PUBLIC_SOLANA_NETWORK": "mainnet",
+        "EXPO_PUBLIC_API_URL": "https://api.trybeaver.app"
+      }
+    },
+    "dapp-store": {
+      "extends": "hackathon",
+      "channel": "dapp-store",
+      "android": {
+        "buildType": "apk",
+        "autoIncrement": true
+      },
+      "env": {
+        "APP_ENV": "production",
+        "APP_UPDATES_DISABLED": "true",
+        "EXPO_PUBLIC_APPLE_SIGN_IN_ENABLED": "false",
+        "EXPO_PUBLIC_INTERNAL_ACCESS_ENABLED": "false",
+        "EXPO_PUBLIC_MOCK_DATA_ENABLED": "false",
+        "EXPO_PUBLIC_SOLANA_NETWORK": "mainnet"
+      }
     }
   },
   "submit": {

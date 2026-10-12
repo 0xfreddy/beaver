@@ -1,3 +1,5 @@
+import * as Application from 'expo-application';
+import { GoldenHourSettings } from '../../components/golden-hour-settings';
 import {
   AccessibilityInfo,
   Alert,
@@ -13,10 +15,10 @@ import { useAuth } from '../../providers/auth-provider';
 import { MetaballProfileAvatar } from '../../components/reacticx/metaball-profile-avatar';
 import { useProfile } from '../../providers/profile-provider';
 import { useEffect, useState } from 'react';
-import { isBiometricUnlockEnabled, subscribeBiometricPreference } from '../../lib/biometric-auth';
+import { biometricSettingsLabel, isBiometricUnlockEnabled, subscribeBiometricPreference } from '../../lib/biometric-auth';
 import { ThemeSwitch, ThemeTransitionProvider } from '../../components/reacticx/theme-switch';
 import { useLive, type InvestmentPolicy } from '../../lib/live';
-import { notificationPermissionState } from '../../lib/notification-permissions';
+import { notificationPermissionState } from '../../lib/notifications';
 import { useMockData } from '../../providers/mock-data-provider';
 
 const rows = [
@@ -27,7 +29,7 @@ const rows = [
   { id: 'investing', title: 'Automatic investing', detail: 'Off' },
   { id: 'rules', title: 'Roundup rules', detail: 'Choose your rule' },
   { id: 'fallback', title: 'Fallback stock', detail: 'Choose a stock' },
-  { id: 'security', title: 'Face ID', detail: 'Off' },
+  { id: 'security', title: biometricSettingsLabel, detail: 'Off' },
   { id: 'notifications', title: 'Notifications', detail: 'Off' },
   { id: 'manual', title: 'Manual mode', detail: 'Receipts' },
 ] as const;
@@ -95,7 +97,7 @@ function SettingsContent() {
         },
         { id: 'rules', title: 'Roundup rules', detail: 'Choose your rule' },
         { id: 'fallback', title: 'Fallback stock', detail: 'Choose a stock' },
-        { id: 'security', title: 'Face ID', detail: 'Device lock' },
+        { id: 'security', title: biometricSettingsLabel, detail: 'Device lock' },
         { id: 'notifications', title: 'Notifications', detail: 'Configured' },
         { id: 'manual', title: 'Manual mode', detail: 'Receipts' },
       ]
@@ -133,7 +135,7 @@ function SettingsContent() {
     }
   }
   return (
-    <Screen fadeTop title="Profile">
+    <Screen atmosphere="quiet" fadeTop title="Profile">
       <View style={styles.profileIdentity}>
         <MetaballProfileAvatar
           id={profile.avatarId}
@@ -184,8 +186,8 @@ function SettingsContent() {
                 : row.id === 'withdraw'
                   ? router.push('/withdraw')
                   : row.id === 'manual'
-                    // Manual mode opens the receipt camera directly.
-                    ? router.push('/receipt-scan')
+                    ? // Manual mode opens the receipt camera directly.
+                      router.push('/receipt-scan')
                     : router.push(`/settings/${row.id}`)
             }
             style={[
@@ -211,13 +213,22 @@ function SettingsContent() {
       </View>
       <Type variant="headline">Appearance</Type>
       <ThemeSwitch />
-      <Button
-        title="Read the introduction"
-        secondary
-        onPress={() => router.push('/onboarding/welcome?readOnly=true')}
-      />
+      <GoldenHourSettings />
       {auth.session ? (
-        <Button title="Sign out" secondary loading={signingOut} onPress={() => void signOut()} />
+        <View style={{ gap: 8 }}>
+          <Type variant="headline">Replay Onboarding</Type>
+          <Type variant="caption" muted>
+            Onboarding so good you wanna check it again.
+          </Type>
+          <Button
+            title="Replay Onboarding"
+            secondary
+            onPress={() => router.push('/onboarding/name')}
+          />
+        </View>
+      ) : null}
+      {auth.session ? (
+        <Button title="Sign Out" secondary loading={signingOut} onPress={() => void signOut()} />
       ) : null}
       {mockData.available && auth.session ? (
         <View style={styles.testDataSection}>
@@ -288,7 +299,8 @@ function SettingsContent() {
         </View>
       ) : null}
       <Type variant="caption" muted style={{ textAlign: 'center' }}>
-        Beaver · Version 0.1
+        Beaver · {Application.nativeApplicationVersion ?? 'Development'}
+        {Application.nativeBuildVersion ? ` (${Application.nativeBuildVersion})` : ''}
       </Type>
     </Screen>
   );

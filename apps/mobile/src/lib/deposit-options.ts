@@ -52,8 +52,11 @@ export function depositBalanceRaw(
 
 export function formatDepositAmount(raw: bigint | string, asset: DepositAsset, decimals: number) {
   const amount = typeof raw === 'bigint' ? raw : BigInt(raw);
-  const divisor = 10n ** BigInt(decimals);
-  const whole = amount / divisor;
-  const fraction = (amount % divisor).toString().padStart(decimals, '0').replace(/0+$/, '');
-  return `${whole}${fraction ? `.${fraction}` : ''} ${asset}`;
+  const negative = amount < 0n;
+  const absolute = negative ? -amount : amount;
+  const scale = 10n ** BigInt(decimals);
+  if (absolute > 0n && absolute * 100n < scale) return `${negative ? '−' : ''}<0.01 ${asset}`;
+  const cents = (absolute * 100n + scale / 2n) / scale;
+  const fraction = (cents % 100n).toString().padStart(2, '0').replace(/0+$/, '');
+  return `${negative ? '−' : ''}${cents / 100n}${fraction ? `.${fraction}` : ''} ${asset}`;
 }

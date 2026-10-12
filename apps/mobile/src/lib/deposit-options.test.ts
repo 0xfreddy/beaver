@@ -44,3 +44,10 @@ describe('Solana Devnet deposit options', () => {
     expect(formatDepositAmount(50_000_000n, 'SOL', 9)).toBe('0.05 SOL');
   });
 });
+
+it('limits displayed token amounts to two decimals without changing base-unit scale', () => {
+  expect(formatDepositAmount('1569660', 'USDC', 6)).toBe('1.57 USDC');
+  expect(formatDepositAmount('1789660', 'USDC', 6)).toBe('1.79 USDC');
+  expect(formatDepositAmount('1', 'SOL', 9)).toBe('<0.01 SOL');
+  expect(formatDepositAmount('0', 'SOL', 9)).toBe('0 SOL');
+});

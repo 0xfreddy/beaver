@@ -3,76 +3,40 @@ import type { ImageSourcePropType } from 'react-native';
 import { router, type Href } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { AppSymbol } from './app-symbol';
-import { OnboardingAnimation, type AnimationName } from './onboarding-animation';
 import { Type } from './ui';
 import { useLive, type InvestmentPolicy } from '../lib/live';
-import { nextRoundupMilestoneCents } from '../lib/roundup-milestone';
+import { homeSetupCards, monthlyRange, type MonthlyRoundups } from '../lib/home-setup-cards';
 import { radius, useTheme } from '../theme';
 
 /* eslint-disable @typescript-eslint/no-require-imports -- Static bundled artwork. */
 const chooseWhen: ImageSourcePropType = require('../../assets/illustrations/everyday-change-transparent.png');
 const chooseWhat: ImageSourcePropType = require('../../assets/illustrations/wallet-token.png');
-const startRoundups: ImageSourcePropType = require('../../assets/illustrations/activity-receipt.png');
+const favouriteStock: ImageSourcePropType = require('../../assets/illustrations/favourite-stock.png');
+const monthlyRoundups: ImageSourcePropType = require('../../assets/illustrations/monthly-roundups.png');
 /* eslint-enable @typescript-eslint/no-require-imports */
 
-type Banner = {
-  id: string;
-  title: string;
-  body: string;
-  art?: ImageSourcePropType;
-  animation?: AnimationName;
-  href: Href;
-};
-
-const wholeDollars = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  maximumFractionDigits: 0,
-});
-
-export function HomeBanners({ totalRoundupCents }: { totalRoundupCents: number }) {
-  const { colors, isDark } = useTheme();
+export function HomeBanners(_props: { totalRoundupCents: number }) {
   const policy = useLive<InvestmentPolicy>('/v1/investment-policy');
+  const range = monthlyRange();
+  const stats = useLive<MonthlyRoundups>(
+    `/v1/roundups/monthly?${new URLSearchParams(range)}`,
+    !!policy.data,
+  );
   if (policy.isPending || policy.error || !policy.data) return null;
+  return <HomeSetupCards policy={policy.data} stats={stats.data} failed={!!stats.error} />;
+}
 
-  const setupComplete =
-    policy.data.roundupRuleConfigured === true && policy.data.fallbackConfigured === true;
-  const milestone = wholeDollars.format(nextRoundupMilestoneCents(totalRoundupCents) / 100);
-  const banners: Banner[] = setupComplete
-    ? [
-        {
-          id: 'invite',
-          title: 'Invite your friends',
-          body: 'Beaver is better with friends.',
-          // The same greeting animation that welcomes you on the invite screen.
-          animation: 'access-granted',
-          href: '/invite-friends',
-        },
-        {
-          id: 'start-roundups',
-          title: 'Start your Roundups',
-          body: `Keep it up to reach ${milestone} of roundups.`,
-          art: startRoundups,
-          href: '/activity',
-        },
-      ]
-    : [
-        {
-          id: 'choose-when',
-          title: 'Choose when',
-          body: 'Start your Roundup',
-          art: chooseWhen,
-          href: '/settings/rules',
-        },
-        {
-          id: 'choose-what',
-          title: 'Choose what',
-          body: 'Pick your stock',
-          art: chooseWhat,
-          href: '/settings/fallback',
-        },
-      ];
-
+export function HomeSetupCards({
+  policy,
+  stats,
+  failed,
+}: {
+  policy: InvestmentPolicy;
+  stats?: MonthlyRoundups;
+  failed?: boolean;
+}) {
+  const { colors, isDark } = useTheme();
+  const banners = homeSetupCards(policy, stats, failed);
   return (
     <ScrollView
       horizontal
@@ -81,7 +45,7 @@ export function HomeBanners({ totalRoundupCents }: { totalRoundupCents: number }
       snapToInterval={260}
       decelerationRate="fast"
       showsHorizontalScrollIndicator={false}
-      accessibilityLabel={setupComplete ? 'Roundup actions' : 'Finish setting up your roundups'}
+      accessibilityLabel="Your roundup progress"
     >
       {banners.map((banner) => (
         <Pressable
@@ -90,7 +54,7 @@ export function HomeBanners({ totalRoundupCents }: { totalRoundupCents: number }
           accessibilityLabel={`${banner.title}. ${banner.body}`}
           onPress={() => {
             void Haptics.selectionAsync().catch(() => {});
-            router.push(banner.href);
+            router.push(banner.href as Href);
           }}
           style={({ pressed }) => [
             styles.card,
@@ -102,28 +66,20 @@ export function HomeBanners({ totalRoundupCents }: { totalRoundupCents: number }
             },
           ]}
         >
-          {banner.animation ? (
-            <View
-              accessible={false}
-              accessibilityElementsHidden
-              importantForAccessibility="no-hide-descendants"
-              style={[styles.art, styles.artAnimation, { opacity: isDark ? 0.3 : 0.22 }]}
-            >
-              <OnboardingAnimation
-                name={banner.animation}
-                height={144}
-                loop
-                backgroundColor={colors.surface}
-              />
-            </View>
-          ) : (
-            <Image
-              source={banner.art}
-              resizeMode="contain"
-              accessible={false}
-              style={[styles.art, { opacity: isDark ? 0.22 : 0.14 }]}
-            />
-          )}
+          <Image
+            source={
+              banner.id === 'rule'
+                ? policy.roundupRuleConfigured
+                  ? monthlyRoundups
+                  : chooseWhen
+                : banner.id === 'favourite'
+                  ? favouriteStock
+                  : chooseWhat
+            }
+            resizeMode="contain"
+            accessible={false}
+            style={[styles.art, { opacity: isDark ? 0.22 : 0.14 }]}
+          />
           <View style={styles.copy}>
             <Type style={styles.title}>{banner.title}</Type>
             <Type muted style={styles.body}>
@@ -131,6 +87,7 @@ export function HomeBanners({ totalRoundupCents }: { totalRoundupCents: number }
             </Type>
           </View>
           <View style={[styles.arrow, { backgroundColor: colors.soft }]}>
+            <Type variant="caption">{banner.action}</Type>
             <AppSymbol name="next" size={16} color={colors.ink} />
           </View>
         </Pressable>
@@ -154,13 +111,14 @@ const styles = StyleSheet.create({
   },
   art: { position: 'absolute', width: 144, height: 144, right: -30, bottom: -34 },
   // The greeting animation fills its whole frame, so clip it to the same watermark slot.
-  artAnimation: { overflow: 'hidden' },
   copy: { maxWidth: 184, gap: 5 },
   title: { fontSize: 19, lineHeight: 24, fontWeight: '600', letterSpacing: -0.45 },
   body: { fontSize: 14, lineHeight: 19, maxWidth: 166 },
   arrow: {
-    width: 36,
-    height: 36,
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    gap: 8,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',

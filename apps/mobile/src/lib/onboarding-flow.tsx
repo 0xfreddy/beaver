@@ -10,6 +10,7 @@ type OnboardingStep =
   | 'intro'
   | 'bank'
   | 'rules'
+  | 'explainer'
   | 'fallback'
   | 'manual'
   | 'spending'

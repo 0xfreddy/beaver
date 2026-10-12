@@ -4,12 +4,23 @@ export const countrySchema = z.string().regex(/^[A-Z]{2}$/);
 export const SALT_EDGE_REGION_VALUES = ['us', 'europe', 'asia_pacific', 'other'] as const;
 export const bankLinkSchema = z
   .object({
+    provider: z.literal('saltedge').optional(),
     country: countrySchema.optional(),
     // A region routes the link to Salt Edge; a country keeps the MoneyKit path.
     region: z.enum(SALT_EDGE_REGION_VALUES).optional(),
     providerCode: z.string().min(1).max(128).optional(),
     connectionId: z.uuid().optional(),
   })
+  .refine(
+    (body) =>
+      body.provider === 'saltedge'
+        ? !!body.country && !!body.providerCode && !body.region && !body.connectionId
+        : !body.providerCode,
+    {
+      message:
+        'An exact bank selection requires provider, country and providerCode; it cannot relink or select a region.',
+    },
+  )
   .refine((body) => !!body.country || !!body.region, {
     message: 'Either country or region is required.',
     path: ['country'],
@@ -64,9 +75,14 @@ export type OnchainSpendingTransaction = {
   roundupCents: number;
   occurredAt: string;
   chain: string;
+  /** Ledger currency; euro-stable spends (EURC) are priced in euro-cents. */
+  currency?: 'USD' | 'EUR';
 };
 export type OnchainSpendingPreview = {
   mode: 'historical_preview';
+  /** Processing means setup may continue while the server finishes and persists the scan. */
+  status: 'complete' | 'processing';
+  durationMs?: number;
   provider: 'etherfi' | 'tuyo';
   /** Spare-change rules round to this increment; percentage rules carry their rate. */
   roundingIncrementCents: number;
@@ -93,6 +109,7 @@ const withdrawalAssetSchema = z.object({
 export const withdrawalRequestSchema = z
   .object({
     network: z.literal('solana'),
+    destinationProofId: z.uuid().optional(),
     destination: z.string().regex(/^[1-9A-HJ-NP-Za-km-z]{32,44}$/),
     cashRaw: z
       .string()
@@ -124,10 +141,16 @@ export const notificationPreferencesSchema = z.object({
   deposits: z.boolean(),
   trades: z.boolean(),
   riskAlerts: z.boolean(),
+  social: z.boolean(),
+  withdrawals: z.boolean().optional(),
+  weeklySummary: z.boolean().optional(),
+  milestones: z.boolean().optional(),
+  appUpdates: z.boolean().optional(),
+  setupReminders: z.boolean().optional(),
 });
 export type NotificationPreferences = z.infer<typeof notificationPreferencesSchema>;
 export const activityQuerySchema = z.object({
-  filter: z.enum(['all', 'roundups', 'excluded']).default('all'),
+  filter: z.enum(['all', 'roundups', 'excluded', 'purchases']).default('all'),
   search: z.string().max(100).default(''),
   cursor: z.string().max(200).optional(),
   limit: z.coerce.number().int().min(1).max(100).default(30),
@@ -162,3 +185,41 @@ export const roundupRuleSchema = z.object({
     z.literal(100),
   ]),
 });
+
+export const NOTIFICATION_CONSENT_VERSION = 4;
+
+export const notificationDeviceSchema = z
+  .object({
+    installationId: z.uuid(),
+    consentVersion: z.number().int().nonnegative().optional(),
+    platform: z.enum(['ios', 'android']),
+    appId: z.string().min(3).max(200),
+    appVersion: z.string().max(80).nullable(),
+    appBuild: z.number().int().positive().optional(),
+    timezone: z
+      .string()
+      .max(100)
+      .refine((value) => {
+        try {
+          new Intl.DateTimeFormat('en', { timeZone: value });
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .optional(),
+    permission: z.enum(['granted', 'denied', 'undetermined']),
+    token: z.string().min(16).max(4096).nullable(),
+  })
+  .refine((value) => value.permission !== 'granted' || value.token !== null, {
+    message: 'An authorized device must provide its native push token',
+  });
+export type NotificationDevice = z.infer<typeof notificationDeviceSchema>;
+
+export type WithdrawalDestinationProof = {
+  id: string;
+  address: string;
+  network: 'mainnet' | 'devnet';
+  expiresAt: string;
+};
+export type WithdrawalDestinationChallenge = WithdrawalDestinationProof & { message: string };

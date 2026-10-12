@@ -9,6 +9,28 @@ import { openBankLink, continueBankLink } from './bank-link.native';
 const uri = 'roundups-development://moneykit/callback';
 afterEach(() => vi.resetAllMocks());
 describe('MoneyKit native handoff', () => {
+  it('persists the token before resolving and ignores an exit during that write', async () => {
+    let stored!: () => void;
+    const persist = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          stored = resolve;
+        }),
+    );
+    sdk.present.mockImplementation(async (c) => {
+      c.onSuccess({ token: { value: 'exchange' } });
+      c.onExit(null);
+    });
+    let resolved = false;
+    const result = openBankLink('session', uri, 'connect', persist).then((value) => {
+      resolved = true;
+      return value;
+    });
+    await vi.waitFor(() => expect(persist).toHaveBeenCalledWith('exchange'));
+    expect(resolved).toBe(false);
+    stored();
+    expect(await result).toBe('exchange');
+  });
   it('extracts the nested exchangeable token and discards provider link IDs', async () => {
     sdk.present.mockImplementation(async (c) =>
       c.onSuccess({ token: { value: 'exchange' }, linkIdentifier: { value: 'secret' } }),

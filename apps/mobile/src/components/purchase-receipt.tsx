@@ -1,12 +1,14 @@
 import { useState } from 'react';
-import { Animated, Image, View, useWindowDimensions } from 'react-native';
+import { Animated, Image, Linking, Pressable, View, useWindowDimensions } from 'react-native';
 import { useSheetReveal } from '../lib/use-sheet-reveal';
 import Svg, { Path } from 'react-native-svg';
 import { Type } from './ui';
+import { AppSymbol } from './app-symbol';
+import { explorerName, explorerTxUrl } from '../lib/explorer';
 import { InteractiveArt } from './interactive-art';
 import { CompanyMark } from './company-mark';
 import { useTheme } from '../theme';
-import { money, type Purchase } from '../lib/purchases';
+import { money, purchaseAmount, purchaseExplanation, type Purchase } from '../lib/purchases';
 /* eslint-disable @typescript-eslint/no-require-imports */
 const seal = require('../../assets/illustrations/merchant-seal.png');
 const starbucksSeal = require('../../assets/illustrations/starbucks-seal.png');
@@ -21,7 +23,7 @@ function Fact({ label, value, total = false }: { label: string; value: string; t
         flexDirection: fontScale > 1.3 ? 'column' : 'row',
         justifyContent: 'space-between',
         gap: 5,
-        paddingVertical: 10,
+        paddingVertical: 5,
       }}
     >
       <Type
@@ -43,6 +45,7 @@ function Fact({ label, value, total = false }: { label: string; value: string; t
 /** The paper travels through a hollow slot, driven by the sheet's reversible progress. */
 export function PurchaseReceipt({ item }: { item: Purchase }) {
   const { colors, isDark } = useTheme();
+  const roundupCents = item.reason === 'awaiting_exchange_rate' ? null : item.roundupCents;
   const { width, fontScale } = useWindowDimensions();
   const [height, setHeight] = useState(0);
   const reveal = useSheetReveal(height);
@@ -52,7 +55,7 @@ export function PurchaseReceipt({ item }: { item: Purchase }) {
     { length: 35 },
     (_, i) => `L${(i + 0.5) * 10},8 L${(i + 1) * 10},0`,
   ).join(' ');
-  const merchant = item.merchant || 'Purchase';
+  const merchant = (item.merchant || 'Purchase').replace(/\s+xStock$/i, '');
   return (
     <View style={{ marginHorizontal: -8 }}>
       <View
@@ -171,7 +174,7 @@ export function PurchaseReceipt({ item }: { item: Purchase }) {
                     resizeMode="contain"
                   />
                   {merchant.trim().toLowerCase() !== 'starbucks' ? (
-                    <CompanyMark merchant={merchant} size={47} seal />
+                    <View style={{ width: 47, height: 47, borderRadius: 24, overflow: 'hidden' }}><CompanyMark merchant={merchant} symbol={item.symbol ?? undefined} size={47} /></View>
                   ) : null}
                 </View>
                 <View
@@ -224,9 +227,9 @@ export function PurchaseReceipt({ item }: { item: Purchase }) {
                         fontVariant: ['tabular-nums'],
                       }}
                     >
-                      {item.roundupCents == null
-                        ? money(0, item.currency)
-                        : `+${money(item.roundupCents, item.currency)}`}
+                      {roundupCents == null
+                        ? '—'
+                        : `+${money(roundupCents, item.roundupCurrency ?? item.currency)}`}
                     </Type>
                   </View>
                   {fontScale <= 1.2 ? (
@@ -242,21 +245,89 @@ export function PurchaseReceipt({ item }: { item: Purchase }) {
                   paddingTop: 7,
                 }}
               >
-                <Fact label="Purchase amount" value={money(item.amountCents, item.currency)} />
-                {item.roundupCents != null ? (
+                <Fact label="Purchase amount" value={purchaseAmount(item)} />
+                {item.usdConversion && (item.originalCurrency ?? item.currency) !== 'USD' ? (
+                  <>
+                    <Fact label="Purchase in USD" value={money(item.usdConversion.usdCents)} />
+                    <Type variant="caption" muted>
+                      Converted to USD before calculating your roundup. Reference rate from{' '}
+                      {new Date(item.usdConversion.observedAt).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        timeZone: 'UTC',
+                      })}
+                      .
+                    </Type>
+                  </>
+                ) : null}
+                {item.reason === 'awaiting_exchange_rate' ? (
+                  <Type muted>{purchaseExplanation(item)}</Type>
+                ) : null}
+                {roundupCents != null ? (
                   <>
                     <Fact
                       label="Rounded to"
-                      value={money(item.amountCents + item.roundupCents, item.currency)}
+                      value={money(
+                        (item.usdConversion?.usdCents ?? item.amountCents) + roundupCents,
+                        item.roundupCurrency ?? item.currency,
+                      )}
+                    />
+                    <View
+                      style={{
+                        borderTopWidth: 1,
+                        borderColor: colors.line,
+                        marginTop: 8,
+                        paddingTop: 8,
+                      }}
                     />
                     <Fact
                       label="Your small change"
-                      value={`+${money(item.roundupCents, item.currency)}`}
+                      value={`+${money(roundupCents, item.roundupCurrency ?? item.currency)}`}
                       total
                     />
                   </>
                 ) : null}
               </View>
+              {item.symbol ? (
+                <View
+                  style={{ borderTopWidth: 1, borderColor: colors.line, paddingTop: 16, gap: 8 }}
+                >
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: 12,
+                      minHeight: 44,
+                    }}
+                  >
+                    <Type variant="caption" muted>
+                      Rounded in
+                    </Type>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <CompanyMark symbol={item.symbol} size={26} />
+                      <Type variant="caption">{item.symbol}</Type>
+                    </View>
+                  </View>
+                  {item.signature ? (
+                    <Pressable
+                      accessibilityRole="link"
+                      accessibilityLabel={`See transaction in ${explorerName()}`}
+                      onPress={() => void Linking.openURL(explorerTxUrl(item.signature!))}
+                      style={({ pressed }) => ({
+                        minHeight: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        opacity: pressed ? 0.6 : 1,
+                      })}
+                    >
+                      <Type variant="caption">See transaction</Type>
+                      <AppSymbol name="next" color={colors.ink} size={18} />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
             </View>
             <Svg
               width="100%"

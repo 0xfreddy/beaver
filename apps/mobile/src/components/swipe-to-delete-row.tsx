@@ -21,7 +21,7 @@ const SNAP_SPRING = { damping: 34, stiffness: 420, mass: 0.9 } as const;
 const FLICK_VELOCITY = 320;
 
 /**
- * The iOS list swipe: drag a row left to reveal a Delete action pinned behind
+ * The iOS list swipe: drag a row left to reveal a trailing action pinned behind
  * its right edge. Only one row stays open at a time (the parent drives that by
  * flipping `open`), and VoiceOver users delete through the custom action.
  */
@@ -31,6 +31,8 @@ export function SwipeToDeleteRow({
   busy = false,
   onOpenChange,
   onDelete,
+  onActivate,
+  actionLabel = 'Delete',
   accessibilityLabel,
   accessibilityHint,
 }: PropsWithChildren<{
@@ -38,6 +40,8 @@ export function SwipeToDeleteRow({
   busy?: boolean;
   onOpenChange: (open: boolean) => void;
   onDelete: () => void;
+  onActivate?: () => void;
+  actionLabel?: string;
   accessibilityLabel: string;
   accessibilityHint: string;
 }>) {
@@ -115,7 +119,11 @@ export function SwipeToDeleteRow({
       accessible
       accessibilityLabel={accessibilityLabel}
       accessibilityHint={accessibilityHint}
-      accessibilityActions={busy ? [] : [{ name: 'delete' }, { name: 'dismiss' }]}
+      accessibilityRole={onActivate ? 'button' : undefined}
+      onAccessibilityTap={onActivate}
+      accessibilityActions={
+        busy ? [] : [{ name: 'delete', label: actionLabel }, { name: 'dismiss' }]
+      }
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === 'delete') onDelete();
         else if (event.nativeEvent.actionName === 'dismiss') close();
@@ -124,7 +132,7 @@ export function SwipeToDeleteRow({
       <View style={styles.underlay}>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Delete"
+          accessibilityLabel={actionLabel}
           accessibilityState={{ disabled: busy }}
           disabled={busy}
           onPress={onDelete}
@@ -135,7 +143,7 @@ export function SwipeToDeleteRow({
           ) : (
             <>
               <AppSymbol name="trash" color="#FFFFFF" size={22} />
-              <Type style={styles.actionLabel}>Delete</Type>
+              <Type style={styles.actionLabel}>{actionLabel}</Type>
             </>
           )}
         </Pressable>

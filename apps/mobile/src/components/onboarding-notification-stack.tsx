@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useIsFocused } from 'expo-router';
-import { StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   cancelAnimation,
@@ -15,6 +15,9 @@ import { CompanyMark } from './company-mark';
 import { Type } from './ui';
 import { useTheme } from '../theme';
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const beaverNotificationIcon = require('../../assets/icon.png');
+
 const notifications = [
   { symbol: 'SBUX', merchant: 'Starbucks', detail: 'Purchase rounded up', amount: '+$0.35' },
   { symbol: 'UBER', merchant: 'Uber', detail: 'Trip spare change found', amount: '+$0.80' },
@@ -24,6 +27,7 @@ const notifications = [
 type NotificationCardProps = {
   index?: number;
   symbol?: string;
+  beaverIcon?: boolean;
   merchant: string;
   detail: string;
   amount?: string;
@@ -49,6 +53,7 @@ export function OnboardingNotificationStack({ onComplete }: { onComplete?: () =>
 export function OnboardingNotificationCard({
   index = 0,
   symbol,
+  beaverIcon = false,
   merchant,
   detail,
   amount,
@@ -102,7 +107,7 @@ export function OnboardingNotificationCard({
         { backgroundColor: colors.surface, borderColor: colors.line },
       ]}
     >
-      <CompanyMark symbol={symbol} size={36} />
+      {beaverIcon ? <Image source={beaverNotificationIcon} style={{ width: 36, height: 36, borderRadius: 8 }} /> : <CompanyMark symbol={symbol} size={36} />}
       <View style={styles.notificationText}>
         <View style={styles.notificationRow}>
           <Type style={styles.merchant}>{merchant}</Type>

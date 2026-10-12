@@ -13,6 +13,14 @@ describe('session restoration', () => {
 });
 
 describe('authenticated startup routing', () => {
+  it.each(['name', 'invite-code', 'intro', 'bank', 'spending', 'controls', 'enter-app'])(
+    'requires sign-in before the %s step',
+    (step) => {
+      expect(onboardingRedirect(`/onboarding/${step}`, true, false, false)).toBe(
+        '/onboarding/account',
+      );
+    },
+  );
   it('keeps a restored user in the app while the backend session refreshes', () => {
     expect(shouldShowOnboarding(['user-a'], 'user-a', null)).toBe(false);
   });
@@ -51,7 +59,7 @@ describe('authenticated startup routing', () => {
   });
 });
 
-it.each(['/moneykit/callback', '/saltedge/link', '/saltedge/callback'])(
+it.each(['/bank-picker', '/moneykit/callback', '/saltedge/link', '/saltedge/callback'])(
   'allows authenticated onboarding bank navigation to %s',
   (path) => {
     expect(onboardingRedirect(path, true, false, true)).toBeNull();

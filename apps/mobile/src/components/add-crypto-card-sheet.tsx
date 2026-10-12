@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  AccessibilityInfo,
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import Animated, {
   cancelAnimation,
   useAnimatedStyle,
@@ -22,6 +30,7 @@ import { OnchainTransactionPreview } from './onchain-transaction-preview';
 import { ProviderSegmentedControl } from './provider-segmented-control';
 import { CryptoCardGuideTray } from './crypto-card-guide-tray';
 import { Tray } from './reacticx/tray';
+import { posthog } from '../lib/telemetry';
 
 const evmAddress = /^0x[a-fA-F0-9]{40}$/;
 
@@ -74,7 +83,7 @@ export function AddCryptoCardSheet({
   }, []);
 
   function rejectAddress(message: string) {
-    setError(null);
+    setError(message);
     void AccessibilityInfo.announceForAccessibility(message);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     if (reducedMotion) return;
@@ -108,7 +117,14 @@ export function AddCryptoCardSheet({
         [value],
         provider === 'Tuyo' ? 'tuyo' : 'etherfi',
       );
-      if (currentScan === scanId.current) setPreview(result);
+      if (currentScan === scanId.current) {
+        setPreview(result);
+        posthog?.capture('historical_preview_viewed', {
+          provider: provider === 'Tuyo' ? 'tuyo' : 'etherfi',
+          transaction_count: result.transactions.length,
+          address_count: result.addresses.length,
+        });
+      }
     } catch (cause) {
       if (currentScan === scanId.current)
         setError(cause instanceof Error ? cause.message : 'We couldn’t read that address.');
@@ -182,7 +198,11 @@ export function AddCryptoCardSheet({
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <ProviderSegmentedControl value={provider} options={cryptoCardProviders} onChange={changeProvider} />
+          <ProviderSegmentedControl
+            value={provider}
+            options={cryptoCardProviders}
+            onChange={changeProvider}
+          />
           <View style={{ gap: 4 }}>
             <Animated.View
               style={[
@@ -191,17 +211,21 @@ export function AddCryptoCardSheet({
                 addressShakeStyle,
               ]}
             >
-              <Type
-                accessibilityLabel={
-                  address ? `${provider} public address ${address}` : 'No crypto card address pasted'
-                }
-                selectable={!!address}
-                muted={!address}
-                numberOfLines={2}
-                style={styles.addressText}
-              >
-                {address || 'Copy your card 0x address'}
-              </Type>
+              <TextInput
+                accessibilityLabel={`${provider} public address`}
+                value={address}
+                onChangeText={(value) => {
+                  setAddress(value);
+                  setPreview(null);
+                  setError(null);
+                }}
+                editable={!busy && !scanning}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Your card 0x address"
+                placeholderTextColor={colors.muted}
+                style={[styles.addressText, { color: colors.ink }]}
+              />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Paste crypto card address"
@@ -242,7 +266,11 @@ export function AddCryptoCardSheet({
               {error}
             </Type>
           ) : null}
-          <OnchainTransactionPreview loading={scanning} transactions={preview?.transactions} />
+          <OnchainTransactionPreview
+            loading={scanning}
+            processing={preview?.status === 'processing'}
+            transactions={preview?.transactions}
+          />
         </ScrollView>
       </Tray>
       <CryptoCardGuideTray

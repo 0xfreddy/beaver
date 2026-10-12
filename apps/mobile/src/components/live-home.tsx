@@ -1,9 +1,10 @@
+import { homeAllocation } from '../lib/home-allocation';
 import { BankSyncCard } from './bank-sync-card';
 import { HomeBanners } from './home-banners';
 import { PerformanceCard } from './performance-card';
 import { Platform, RefreshControl, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Button, Screen, Type } from './ui';
 import { dollars, useLive, type Balances, type Holdings } from '../lib/live';
 import type { PurchasePage } from '../lib/purchases';
@@ -21,9 +22,10 @@ import {
   retainedOnboardingPreview,
 } from '../lib/recent-purchases';
 import { useAuth } from '../providers/auth-provider';
-import { useQueries } from '@tanstack/react-query';
+import { useQueries, useQueryClient } from '@tanstack/react-query';
 import type { CryptoCard } from '@roundups/types';
-import { fetchOnchainSpendingPreview } from '../lib/api';
+import { apiRequest, fetchOnchainSpendingPreview } from '../lib/api';
+import { refreshHomeBanks } from '../lib/bank-refresh';
 
 function RecentPurchasesHeading({ waiting }: { waiting: boolean }) {
   return (
@@ -57,6 +59,9 @@ export function LiveHome() {
   const { colors } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
   const auth = useAuth();
+  const cache = useQueryClient();
+  const refreshInFlight = useRef(false);
+  const [bankRefreshMessages, setBankRefreshMessages] = useState<string[]>([]);
   const cryptoCards = useLive<{ items: CryptoCard[] }>('/v1/bank/crypto-cards', true, false);
   const savedCardPreviews = useQueries({
     queries: cryptoPreviewRequests(cryptoCards.data?.items ?? []).map(
@@ -79,45 +84,28 @@ export function LiveHome() {
       count: number;
     }[];
   }>('/v1/overview');
-  const balances = useLive<Balances>('/v1/trading/balances');
-  const recent = useLive<PurchasePage>('/v1/transactions?limit=3');
-  const holdings = useLive<Holdings>('/v1/portfolio');
-  const pending = overview.data?.buckets.filter((bucket) =>
-    ['pending', 'below_market_minimum'].includes(bucket.status),
+  const banks = useLive<{ items: { status: string; disconnectRequested?: boolean }[] }>(
+    '/v1/bank/connections',
   );
-  // Once the portfolio owns stock, the semicircle divides by holdings like the
-  // mocked design; before that it previews where pending roundups are headed.
-  const ownedMarkets = (holdings.data?.items ?? [])
-    .filter((item) => BigInt(item.rawAmount) > 0n && item.valueUsdCents != null)
-    .map((item) => ({ symbol: item.symbol, amountCents: Number(item.valueUsdCents) }));
-  // With real holdings the wallet's USDC sits in the dome too: $1 in Netflix and
-  // $1 in cash fill half the semicircle each.
-  const cashCents =
-    balances.data && !balances.error
-      ? Number((BigInt(balances.data.availableUsdcRaw) * 100n) / 10n ** 6n)
-      : 0;
-  const allocationMarkets =
-    ownedMarkets.length > 0
-      ? cashCents > 0
-        ? [...ownedMarkets, { symbol: 'USDC', amountCents: cashCents }]
-        : ownedMarkets
-      : Object.values(
-          (pending ?? []).reduce<Record<string, { symbol: string; amountCents: number }>>(
-            (markets, bucket) => {
-              const market = markets[bucket.symbol] ?? { symbol: bucket.symbol, amountCents: 0 };
-              market.amountCents += Number(bucket.amountCents);
-              markets[bucket.symbol] = market;
-              return markets;
-            },
-            {},
-          ),
-        );
-  // Pull-to-refresh refetches everything the home screen renders.
+  const balances = useLive<Balances>('/v1/trading/balances');
+  const recent = useLive<PurchasePage>('/v1/transactions?filter=purchases&limit=3');
+  const holdings = useLive<Holdings>('/v1/portfolio');
+  const allocationData = homeAllocation(holdings.data, balances.data, overview.data?.buckets);
+  // Request bank data first; acceptance is not completion. Normal query polling follows the import.
   const refresh = useCallback(async () => {
-    if (refreshing) return;
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     setRefreshing(true);
+    setBankRefreshMessages(['Requesting bank updates…']);
     try {
+      const bankRequest = refreshHomeBanks((path, options) =>
+        apiRequest(auth.getAccessToken, path, options),
+      )
+        .then(setBankRefreshMessages)
+        .catch(() => setBankRefreshMessages(['Couldn’t request bank updates. Pull down to retry.']))
+        .finally(() => cache.invalidateQueries({ queryKey: ['live', auth.user?.id] }));
       await Promise.allSettled([
+        bankRequest,
         balances.refetch(),
         recent.refetch(),
         overview.refetch(),
@@ -126,11 +114,12 @@ export function LiveHome() {
         ...savedCardPreviews.map((query) => query.refetch()),
       ]);
     } finally {
+      refreshInFlight.current = false;
       setRefreshing(false);
     }
-  }, [refreshing, balances, recent, overview, holdings, cryptoCards, savedCardPreviews]);
-  const allocation = useAllocationChart(allocationMarkets, {
-    label: ownedMarkets.length > 0 ? 'Portfolio' : 'Pending roundups',
+  }, [auth, cache, balances, recent, overview, holdings, cryptoCards, savedCardPreviews]);
+  const allocation = useAllocationChart(allocationData.markets, {
+    label: 'Your allocations',
     refreshing,
     onRefresh: refresh,
   });
@@ -144,9 +133,12 @@ export function LiveHome() {
     ...savedCardPreviews.flatMap((query) => (query.data ? [query.data] : [])),
   ];
   const recentItems = recentPurchases(recent.data?.items ?? [], cryptoPreviews);
-  const waitingForFirstTransaction = !recent.isPending && recentItems.length === 0;
+  const loadingPurchases = recentItems.length === 0 && recent.isPending;
+  const waitingForFirstTransaction = recent.isSuccess && recentItems.length === 0;
+
   return (
     <Screen
+      atmosphere="home"
       compact
       fadeTop
       onScroll={allocation.onScroll}
@@ -165,6 +157,25 @@ export function LiveHome() {
     >
       <AccountGate>
         {allocation.slot}
+        <View style={styles.bankRefreshStatus}>
+          <BankSyncCard />
+          {bankRefreshMessages.map((message) => (
+            <Type key={message} variant="caption" muted accessibilityLiveRegion="polite">
+              {message}
+            </Type>
+          ))}
+        </View>
+        {allocationData.awaitingConversion ? (
+          <Type variant="caption" muted>
+            Some pending roundups are waiting for USD conversion.
+          </Type>
+        ) : null}
+        {allocationData.unfundedCents > 0 ? (
+          <Type variant="caption" muted>
+            ${(allocationData.unfundedCents / 100).toFixed(2)} in pending roundups is waiting for
+            funding.
+          </Type>
+        ) : null}
         <OverviewCards
           purchaseCount={overview.data?.purchaseCount}
           live={{
@@ -190,24 +201,46 @@ export function LiveHome() {
           </View>
         ) : null}
         <PerformanceCard />
-        <BankSyncCard />
         <HomeBanners totalRoundupCents={totalRoundupCents} />
-        <RecentPurchasesHeading waiting={waitingForFirstTransaction} />
+        <View style={{ gap: 0 }}>
+          <RecentPurchasesHeading waiting={waitingForFirstTransaction} />
+        </View>
         {recentItems.map((item) => (
           <LivePurchaseRow key={item.id} item={item} compact />
         ))}
-        {waitingForFirstTransaction ? <RecentPurchaseSkeleton /> : null}
+        {loadingPurchases ? <RecentPurchaseSkeleton /> : null}
+        {recent.error ? (
+          <View style={{ gap: 8 }}>
+            <Type accessibilityRole="alert" muted>
+              {recentItems.length
+                ? 'Couldn’t refresh purchases. Your last update is still shown.'
+                : 'Couldn’t load purchases. Your bank connection has not been changed.'}
+            </Type>
+            <Button
+              title="Retry purchases"
+              appearance="onboarding"
+              loading={recent.isFetching}
+              onPress={() => void recent.refetch()}
+            />
+          </View>
+        ) : null}
+        {banks.data &&
+        !banks.error &&
+        !banks.data.items.some(
+          (bank) => bank.status !== 'disconnected' && !bank.disconnectRequested,
+        ) ? (
+          <Button
+            appearance="onboarding"
+            title="Connect bank"
+            onPress={() => router.push('/settings/banks')}
+          />
+        ) : null}
         <Button
           appearance="onboarding"
           title="Add a purchase manually"
           onPress={() => router.push('/receipt-scan')}
         />
-        {[
-          overview.error,
-          recent.error,
-          cryptoCards.error,
-          ...savedCardPreviews.map((query) => query.error),
-        ]
+        {[overview.error, cryptoCards.error, ...savedCardPreviews.map((query) => query.error)]
           .filter(Boolean)
           .map((error, i) => (
             <Type key={i} accessibilityRole="alert">
@@ -220,8 +253,9 @@ export function LiveHome() {
 }
 
 const styles = StyleSheet.create({
+  bankRefreshStatus: { gap: 4 },
   recentHeading: {
-    // Extra breathing room above the section after the sync card (12 comes from the compact stack gap).
+    // Extra breathing room before the activity section (12 comes from the compact stack gap).
     marginTop: 12,
     minHeight: 52,
     flexDirection: 'row',

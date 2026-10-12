@@ -1,7 +1,10 @@
 import { router } from 'expo-router';
-import type { PropsWithChildren, ReactNode } from 'react';
+import { useContext, type PropsWithChildren, type ReactNode } from 'react';
+import { HeaderShownContext } from 'expo-router/react-navigation';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ActivityIndicator,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -24,6 +27,7 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import { useTheme } from '../theme';
+import { GoldenHourBackground } from './golden-hour-background';
 import { ScrollEdgeFade } from './scroll-edge-fade';
 import { AppSymbol } from './app-symbol';
 
@@ -92,7 +96,9 @@ export function Screen({
   topPadding,
   fillContent = false,
   refreshControl,
+  atmosphere = 'none',
 }: PropsWithChildren<{
+  atmosphere?: 'home' | 'quiet' | 'none';
   title?: string;
   eyebrow?: string;
   action?: ReactNode;
@@ -107,11 +113,19 @@ export function Screen({
   fillContent?: boolean;
   refreshControl?: ScrollViewProps['refreshControl'];
 }>) {
-  const { colors } = useTheme();
+  const { colors, choice } = useTheme();
+  const insets = useSafeAreaInsets();
+  const headerShown = useContext(HeaderShownContext);
+  const showSky = choice === 'golden' && atmosphere !== 'none' && !backgroundColor;
   const { fontScale } = useWindowDimensions();
   return (
+    // Keep this layout-only wrapper collapsible. An opaque native View here
+    // hides the ScrollView from iOS form-sheet sizing and leaves sheets blank.
+    // The ScrollView (or atmosphere artwork) owns the screen background.
     <View style={{ flex: 1 }}>
+      {showSky && <GoldenHourBackground quiet={atmosphere === 'quiet'} />}
       <Animated.ScrollView
+        nestedScrollEnabled
         ref={scrollRef}
         onScroll={onScroll}
         scrollEventThrottle={16}
@@ -123,13 +137,22 @@ export function Screen({
         onAccessibilityEscape={() => {
           if (router.canGoBack()) router.back();
         }}
-        style={{ flex: 1, backgroundColor: backgroundColor ?? colors.background }}
+        style={{
+          flex: 1,
+          backgroundColor: showSky ? 'transparent' : (backgroundColor ?? colors.background),
+        }}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={[
           styles.screen,
           fillContent && { flexGrow: 1 },
           compact && { paddingTop: 12, gap: 12 },
           topPadding !== undefined && { paddingTop: topPadding },
+          // Android does not apply ScrollView's iOS automatic content insets.
+          // A visible native header already clears the status bar.
+          Platform.OS === 'android' && {
+            paddingTop: (topPadding ?? (compact ? 12 : 22)) + (headerShown ? 0 : insets.top),
+            paddingBottom: 48 + insets.bottom,
+          },
         ]}
       >
         {(title || eyebrow) && (
@@ -151,7 +174,7 @@ export function Screen({
         )}
         {children}
       </Animated.ScrollView>
-      {fadeTop && <ScrollEdgeFade />}
+      {fadeTop && !showSky && <ScrollEdgeFade />}
       {overlay}
     </View>
   );
@@ -273,6 +296,7 @@ export function Button({
             accessible={false}
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
+            style={{ transform: [{ translateY: 1 }] }}
           >
             <AppSymbol name="next" color={foreground} size={18} />
           </View>
@@ -369,6 +393,7 @@ const styles = StyleSheet.create({
   // Fliptexts' raised white surface, rendered with native inset/outset shadows.
   // The white face and dark label deliberately stay constant in both appearances.
   onboardingButton: {
+    gap: 6,
     minHeight: 56,
     paddingHorizontal: 24,
     paddingVertical: 16,

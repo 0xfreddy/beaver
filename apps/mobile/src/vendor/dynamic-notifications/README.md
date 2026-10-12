@@ -1,0 +1,1 @@
+Animation geometry adapted from https://github.com/rit3zh/expo-dynamic-notifications at 5de059a5cbefbe28c14efbe785166665a7c70bc5. MIT license preserved in LICENSE. Beaver owns the event queue, accessible content, theme, lifecycle and foreground presentation. No upstream demo screens or dependency changes included.

@@ -121,7 +121,12 @@ export const achievementDefinitions: readonly AchievementDefinition[] = [
     assetKey: 'five-friends',
   },
 ];
-export type AchievementAward = { definitionId: string; criterionVersion: 1; earnedAt: string };
+export type AchievementAward = {
+  definitionId: string;
+  criterionVersion: 1;
+  earnedAt: string;
+  presentedAt?: string | null;
+};
 export type AchievementSummary = {
   metric: 'season-points';
   version: 2;

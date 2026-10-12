@@ -85,9 +85,29 @@ const definition = (
   group,
   criterionVersion: 1,
   points: 0,
-  assetKey: '',
+  assetKey: id,
 });
+export const retiredRetentionAchievements = [
+  definition(
+    'second-visit',
+    'Second Visit',
+    'Previously earned return milestone.',
+    'Earlier achievements',
+  ),
+  definition(
+    'back-in-the-flow',
+    'Back in the Flow',
+    'Previously earned return milestone.',
+    'Earlier achievements',
+  ),
+];
 export const retentionAchievements = [
+  definition(
+    'first-link',
+    'First Link',
+    'Connect your first bank successfully.',
+    'Getting started',
+  ),
   definition(
     'first-twig',
     'First Twig',
@@ -107,9 +127,9 @@ export const retentionAchievements = [
     'Getting started',
   ),
   definition(
-    'second-visit',
-    'Second Visit',
-    'Review something meaningful again at least 24 hours after your first review.',
+    'first-review',
+    'First Review',
+    'Review your first successfully invested roundup.',
     'Your rhythm',
   ),
   definition(
@@ -152,12 +172,6 @@ export const retentionAchievements = [
     'beaver-veteran',
     'Beaver Veteran',
     'Successfully execute roundups in 26 different weeks.',
-    'Your rhythm',
-  ),
-  definition(
-    'back-in-the-flow',
-    'Back in the Flow',
-    'Return for a meaningful review after 30 days away.',
     'Your rhythm',
   ),
   definition(

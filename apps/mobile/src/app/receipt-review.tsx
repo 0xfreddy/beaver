@@ -1,3 +1,4 @@
+import { ReceiptOutcome } from '../components/receipt-outcome';
 import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -15,7 +16,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../providers/auth-provider';
 import { useLive, type InvestmentPolicy } from '../lib/live';
 import { apiRequest } from '../lib/api';
-import { money } from '../lib/purchases';
 import { posthog } from '../lib/telemetry';
 import {
   clearReceiptScanDraft,
@@ -33,6 +33,7 @@ import {
 } from '../components/receipt-scan/edit-receipt-tray';
 
 type Saved = {
+  transactionId: string | null;
   preview: boolean;
   alreadyConfirmed: boolean;
   roundupCents: number;
@@ -66,7 +67,7 @@ export default function ReceiptReview() {
 
   const cardData = useMemo(
     () => ({
-      merchant,
+      merchant: merchant.replace(/\s+xStock$/i, ''),
       category: draft?.category ?? null,
       date,
       paymentMethod: draft?.paymentMethod ?? null,
@@ -144,6 +145,7 @@ export default function ReceiptReview() {
       clearReceiptScanDraft();
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setSaved({
+        transactionId: result.transactionId ?? null,
         alreadyConfirmed: !!result.alreadyConfirmed,
         preview: !!result.preview,
         roundupCents: roundup,
@@ -183,26 +185,7 @@ export default function ReceiptReview() {
         >
           <View style={{ alignItems: 'center', gap: 14, flex: 1, justifyContent: 'center' }}>
             <OnboardingAnimation name="funding-thumbs-up" height={120} loop={false} />
-            <Type variant="title" style={styles.successTitle}>
-              {saved.alreadyConfirmed
-                ? 'Already saved'
-                : saved.preview
-                  ? 'Saved as preview'
-                  : saved.stockName
-                    ? `${saved.stockName} roundup completed`
-                    : 'Roundup completed'}
-            </Type>
-            <Type style={styles.successBody}>
-              {saved.alreadyConfirmed
-                ? 'This purchase was already recorded. Check Activity for its roundup.'
-                : saved.preview
-                  ? 'No money was invested yet. Automatic investing is paused — turn it on so your purchases invest.'
-                  : saved.roundupCents > 0
-                    ? `${money(saved.roundupCents, saved.currency)} from this purchase is invested${
-                        saved.stockName ? ` in ${saved.stockName}` : ''
-                      }.`
-                    : 'This purchase was already at a whole amount, so its roundup is $0.00.'}
-            </Type>
+            <ReceiptOutcome transactionId={saved.transactionId} name={saved.stockName} preview={saved.preview} alreadyConfirmed={saved.alreadyConfirmed} dark />
           </View>
           <View style={{ gap: 10, alignSelf: 'stretch', alignItems: 'center' }}>
             <Button
@@ -269,8 +252,6 @@ export default function ReceiptReview() {
                 <AppSymbol name="next" color="#0E1118" size={15} />
                 <Type style={styles.selectStockLabel}>Select stock</Type>
               </Pressable>
-            ) : targetName ? (
-              <Type style={styles.targetStock}>Rounds up into {targetName}</Type>
             ) : null}
             {missingDetails ? (
               <View style={styles.warningPill} accessibilityRole="alert">

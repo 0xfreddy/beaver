@@ -110,3 +110,4 @@ export const apiErrorSchema = z.object({
 export * from './social';
 
 export * from './retention';
+export * from './app-update';

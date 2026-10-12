@@ -10,21 +10,47 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PublicProfile } from '@roundups/types';
 import { useAuth } from './auth-provider';
+import { useMockData } from './mock-data-provider';
 import { avatars } from '../lib/avatars';
 import { isMockDataEligible } from '../lib/mock-data';
 import { defaultProfile, validateAlias, type PreviewProfile } from '../lib/profile-preview';
 import { apiRequest } from '../lib/api';
+// An optional cache from an older build must never block the authoritative profile.
+function localProfile(raw: string | null): PreviewProfile {
+  try {
+    const stored = raw ? JSON.parse(raw) : null;
+    if (!stored || typeof stored !== 'object') return defaultProfile;
+    let alias = '';
+    try {
+      if (typeof stored.alias === 'string' && stored.alias) alias = validateAlias(stored.alias);
+    } catch {
+      /* Ignore an obsolete alias. */
+    }
+    return {
+      ...defaultProfile,
+      alias,
+      avatarId: avatars.some((a) => a.id === stored.avatarId)
+        ? stored.avatarId
+        : defaultProfile.avatarId,
+    };
+  } catch {
+    return defaultProfile;
+  }
+}
 const Context = createContext<{
   scope: string;
   profile: PreviewProfile;
   ready: boolean;
   error: string | null;
+  retry: () => Promise<void>;
   live: boolean;
   save: (patch: Partial<Pick<PreviewProfile, 'alias' | 'avatarId'>>) => Promise<void>;
 } | null>(null);
 export function ProfileProvider({ children }: PropsWithChildren) {
   const auth = useAuth(),
     cache = useQueryClient();
+  const sample = useMockData();
+  const sampleReady = sample.ready && !sample.busy && !sample.error;
   const key = `roundups.profile.v1:${auth.user?.id ?? 'anonymous'}`;
   const owner = useRef(key);
   owner.current = key;
@@ -37,12 +63,7 @@ export function ProfileProvider({ children }: PropsWithChildren) {
     let active = true;
     void AsyncStorage.getItem(key)
       .then((raw) => {
-        const stored = raw ? (JSON.parse(raw) as PreviewProfile) : defaultProfile;
-        const profile = {
-          ...defaultProfile,
-          alias: stored.alias ? validateAlias(stored.alias) : '',
-          avatarId: avatars.some((a) => a.id === stored.avatarId) ? stored.avatarId : 'glass-12',
-        };
+        const profile = localProfile(raw);
         if (active) setState({ key, profile, error: null });
       })
       .catch(() => {
@@ -59,16 +80,15 @@ export function ProfileProvider({ children }: PropsWithChildren) {
   }, [key]);
   const server = useQuery({
     queryKey: ['social', auth.user?.id, 'profile'],
-    enabled: !!auth.session && !auth.sessionError && state.key === key,
-    // On a sample account's first sign-in this query can fire before the mock
-    // fixture activates, hitting the real API with the static token (401).
-    // A few spaced retries bridge the activation; real profiles keep retry: 1.
+    // Wait for fixture restoration instead of sending a synthetic token to the
+    // live API while the sample account is still initializing.
+    enabled: !!auth.session && !auth.sessionError && state.key === key && sampleReady,
     retry: isMockDataEligible() ? 5 : 1,
     retryDelay: 900,
     queryFn: async () => {
       // The server migration only fills an untouched profile and never awards from flags.
-      const raw = await AsyncStorage.getItem(key);
-      const local = raw ? (JSON.parse(raw) as PreviewProfile) : null;
+      const raw = await AsyncStorage.getItem(key).catch(() => null);
+      const local = localProfile(raw);
       return apiRequest<PublicProfile>(auth.getAccessToken, '/v1/social/profile/migrate', {
         method: 'POST',
         body: JSON.stringify(
@@ -85,7 +105,7 @@ export function ProfileProvider({ children }: PropsWithChildren) {
     },
   });
   const live = !!auth.session;
-  const ready = state.key === key && (!live || !!server.data);
+  const ready = state.key === key && (!live || (sampleReady && !!server.data));
   const profile = live
     ? server.data
       ? { version: 1 as const, alias: server.data.alias, avatarId: server.data.avatarId }
@@ -121,7 +141,14 @@ export function ProfileProvider({ children }: PropsWithChildren) {
         profile,
         ready,
         live,
-        error: live ? (server.error?.message ?? null) : state.error,
+        error: live
+          ? (auth.sessionError ?? sample.error ?? server.error?.message ?? null)
+          : state.error,
+        retry: async () => {
+          if (sample.error) await sample.reload();
+          const result = await server.refetch();
+          if (result.error) throw result.error;
+        },
         save,
       }}
     >

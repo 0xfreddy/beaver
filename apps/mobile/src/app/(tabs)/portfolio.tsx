@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { router } from 'expo-router';
 import { randomUUID } from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
@@ -19,6 +19,7 @@ import { Tray } from '../../components/reacticx/tray';
 import { RadiantButton } from '../../components/reacticx/radiant-button';
 import { SkeletonBlock } from '../../components/shimmer-skeleton';
 import { AppSymbol } from '../../components/app-symbol';
+import { portfolioAllocation } from '../../lib/portfolio-allocation';
 
 const holdingColors: Record<string, string> = {
   SBUX: '#00754A',
@@ -49,6 +50,7 @@ export default function Portfolio() {
 }
 
 function LivePortfolio() {
+  const { height } = useWindowDimensions();
   const auth = useAuth();
   const { colors } = useTheme();
   const cache = useQueryClient();
@@ -81,15 +83,13 @@ function LivePortfolio() {
   });
   const chartData = useMemo(
     () =>
-      (holdings.data?.items ?? [])
-        .filter((item) => item.valueUsdCents !== null && BigInt(item.valueUsdCents) > 0n)
-        .map((item) => ({
-          label: item.symbol,
-          value: Number(item.valueUsdCents),
-          formattedValue: dollars(item.valueUsdCents!, 2),
-          color: holdingColors[item.symbol],
-        })),
-    [holdings.data?.items],
+      portfolioAllocation(holdings.data).map((item) => ({
+        label: item.symbol,
+        value: Number(item.cents),
+        formattedValue: dollars(item.cents, 2),
+        color: item.symbol === 'USDC' ? '#2775CA' : holdingColors[item.symbol],
+      })),
+    [holdings.data],
   );
   const portfolioValue = useMemo(() => {
     if (!holdings.data) return '—';
@@ -113,9 +113,9 @@ function LivePortfolio() {
       <SplitView.Root
         fullBleed
         gap={25}
-        initialTopHeight={820}
+        initialTopHeight={height * 0.52}
         minTopHeight={120}
-        minBottomHeight={150}
+        minBottomHeight={240}
       >
         <SplitView.Top style={{ backgroundColor: colors.surface }}>
           <ScrollView
@@ -178,6 +178,26 @@ function LivePortfolio() {
                 </Pressable>
               );
             })}
+            {holdings.data ? (
+              <View style={[styles.holdingRow, { borderColor: colors.line }]}>
+                <View style={[styles.holdingMark, { backgroundColor: '#2775CA' }]} />
+                <View style={styles.holdingIdentity}>
+                  <Type style={styles.holdingName}>USDC cash</Type>
+                  <Type variant="caption" muted>
+                    USDC
+                  </Type>
+                </View>
+                <Type style={styles.holdingValue}>
+                  {dollars(
+                    (
+                      (BigInt(holdings.data.cash.rawAmount) * 100n) /
+                      10n ** BigInt(holdings.data.cash.decimals)
+                    ).toString(),
+                    2,
+                  )}
+                </Type>
+              </View>
+            ) : null}
             {holdings.error ? (
               <Type accessibilityRole="alert">{holdings.error.message}</Type>
             ) : null}
@@ -198,7 +218,8 @@ function LivePortfolio() {
               </RadiantButton>
               {balances.data &&
               !balances.error &&
-              (BigInt(balances.data.availableUsdcRaw) > 0n || (holdings.data?.items.length ?? 0) > 0) ? (
+              (BigInt(balances.data.availableUsdcRaw) > 0n ||
+                (holdings.data?.items.length ?? 0) > 0) ? (
                 <Button title="Withdraw" secondary onPress={() => router.push('/withdraw')} />
               ) : null}
             </View>
@@ -211,11 +232,17 @@ function LivePortfolio() {
             {chartData.length ? (
               <BarChart
                 data={chartData}
-                accessibilityLabel="Current xStock allocation bar chart"
+                accessibilityLabel="Portfolio allocation including USDC cash"
                 showValueRow={false}
               />
-            ) : (
+            ) : holdings.isPending || (!holdings.isError && !holdings.data?.items.some((item) => item.valueUsdCents === null && BigInt(item.rawAmount) > 0n)) ? (
               <PortfolioChartSkeleton />
+            ) : (
+              <Type muted>
+                {holdings.isError
+                  ? 'Allocation unavailable. Try again.'
+                  : 'Stock prices are unavailable right now.'}
+              </Type>
             )}
           </View>
         </SplitView.Bottom>
@@ -223,7 +250,6 @@ function LivePortfolio() {
       <Tray
         visible={!!selected}
         title={selected ? `Sell your ${selected.symbol} holding?` : 'Confirm sale'}
-        subtitle="Review this request before it is submitted."
         dismissible={!sell.isPending}
         onClose={() => {
           if (!sell.isPending) setSelected(null);
@@ -246,9 +272,7 @@ function LivePortfolio() {
         {selected ? (
           <>
             <Type muted>
-              This submits all {selected.symbol} tokens in your trading account for sale to USDC,
-              within the configured slippage limit. Prices can change. The order is complete only
-              after finalization.
+              Sell all your {selected.symbol} for USDC. The final amount may vary.
             </Type>
             {intent.current && sell.isError ? (
               <Type muted>

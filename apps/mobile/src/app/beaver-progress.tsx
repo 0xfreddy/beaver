@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { TextInput, View } from 'react-native';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { RetentionSummary } from '@roundups/types';
@@ -21,7 +21,8 @@ function Progress() {
     sample = useMockData();
   const query = useLive<RetentionSummary>('/v1/social/retention', true, 60000);
   const policy = useLive<InvestmentPolicy>('/v1/investment-policy');
-  const [showRecap, setShowRecap] = useState(false);
+  const { action } = useLocalSearchParams<{ action?: string }>();
+  const [showRecap, setShowRecap] = useState(action === 'recap');
   const [lessonId, setLessonId] = useState<string | null>(null);
   const [reviewId, setReviewId] = useState<string | null>(null);
   const [confirmedRules, setConfirmedRules] = useState(false);
@@ -114,8 +115,8 @@ function Progress() {
           )}
           <Type variant="headline">A little understanding</Type>
           <Type muted>
-            Review a new lesson or completed roundup on a different day from your recap to earn 20
-            points. Weeks run Monday to Sunday, UTC.
+            Review a completed roundup to earn 20 points, once per week. Lessons help you understand
+            your roundups and unlock achievements. Weeks run Monday to Sunday, UTC.
           </Type>
           {lesson ? (
             <View

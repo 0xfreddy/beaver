@@ -8,9 +8,8 @@ import { AppState, Linking, Pressable, Switch, TextInput, View } from 'react-nat
 import { HoldDeleteButton } from '../../components/hold-delete-button';
 import * as WebBrowser from 'expo-web-browser';
 import { LegalLinks } from '../../components/legal-links';
-import { Button, Card, Screen, Type } from '../../components/ui';
+import { Button, Card, Screen, TextButton, Type } from '../../components/ui';
 import { BankControls } from '../../components/bank-controls';
-import { LogoAttribution } from '../../components/logo-attribution';
 import { AccountGate } from '../../components/account-gate';
 import { CryptoCards } from '../../components/crypto-cards';
 import { SpendingSetup } from '../../components/spending-setup';
@@ -22,15 +21,19 @@ import { useTheme } from '../../theme';
 import { useMockData } from '../../providers/mock-data-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { ApiError, apiRequest } from '../../lib/api';
+import { acceptNotificationConsent, hasNotificationConsent } from '../../lib/notification-consent';
+import { syncNotificationRegistration } from '../../lib/notification-registration';
 import { posthog } from '../../lib/telemetry';
 import {
   notificationPermissionState,
-  openNotificationSettings,
   requestNotificationPermission,
+  openNotificationSettings,
+  previewNotification,
   type NotificationPermissionState,
-} from '../../lib/notification-permissions';
+} from '../../lib/notifications';
 import {
   biometricAvailability,
+  biometricSettingsLabel,
   disableBiometricUnlock,
   enableBiometricUnlock,
   isBiometricUnlockEnabled,
@@ -110,6 +113,10 @@ export default function SettingsDetail() {
 }
 
 function SpendingSettings({ kind }: { kind: 'banks' | 'crypto' }) {
+  const [linkRequest, setLinkRequest] = useState(0);
+  const [bankBusy, setBankBusy] = useState(false);
+  const [bankStatusActive, setBankStatusActive] = useState(false);
+  const params = useLocalSearchParams<{ stage?: string; link?: string }>();
   const connections = useLive<{ items: { id: string }[] }>(
     kind === 'banks' ? '/v1/bank/connections' : '/v1/bank/crypto-cards',
   );
@@ -119,9 +126,55 @@ function SpendingSettings({ kind }: { kind: 'banks' | 'crypto' }) {
       connections.error instanceof ApiError &&
       connections.error.code === 'BANK_NOT_CONFIGURED')
   )
-    return <SpendingSetup initialStage={kind === 'banks' ? 'bank' : 'address'} />;
+    return (
+      <SpendingSetup
+        initialStage={
+          kind === 'banks'
+            ? params.stage === 'connect' || params.link === '1'
+              ? 'connect'
+              : 'bank'
+            : 'address'
+        }
+      />
+    );
+  if (kind === 'banks')
+    return (
+      <Screen title="Connected banks" fillContent>
+        {connections.isPending ? (
+          <Type muted>Loading connections…</Type>
+        ) : connections.error ? (
+          <Type accessibilityRole="alert">{connections.error.message}</Type>
+        ) : (
+          <BankControls
+            hideConnectAction
+            linkRequest={linkRequest}
+            onBusyChange={setBankBusy}
+            onStatusActiveChange={setBankStatusActive}
+          />
+        )}
+        {/* Keep the sheet content and its action in one native scroll view.
+            A nested keyboard-avoiding layout can lose its scroll viewport
+            during iOS form-sheet sizing. Long lists must scroll to the action. */}
+        <View style={{ marginTop: 'auto', paddingTop: 24 }}>
+          {connections.error ? (
+            <Button
+              appearance="onboarding"
+              title="Try again"
+              onPress={() => void connections.refetch()}
+            />
+          ) : connections.isPending || bankStatusActive ? null : (
+            <Button
+              appearance="onboarding"
+              title="Connect another bank"
+              loading={bankBusy}
+              onPress={() => setLinkRequest((value) => value + 1)}
+            />
+          )}
+        </View>
+      </Screen>
+    );
   return (
-    <Screen title={kind === 'banks' ? 'Connected banks' : 'Crypto cards'} fillContent>
+    <Screen title="Crypto cards" fillContent>
       {connections.isPending ? (
         <Type muted>Loading connections…</Type>
       ) : connections.error ? (
@@ -129,11 +182,6 @@ function SpendingSettings({ kind }: { kind: 'banks' | 'crypto' }) {
           <Type accessibilityRole="alert">{connections.error.message}</Type>
           <Button title="Try again" onPress={() => void connections.refetch()} />
         </>
-      ) : kind === 'banks' ? (
-        <View style={{ flex: 1 }}>
-          <BankControls />
-          <LogoAttribution />
-        </View>
       ) : (
         <CryptoCards />
       )}
@@ -191,7 +239,7 @@ function SecuritySettings() {
       setBusy(false);
     }
   }
-  const label = availability?.label ?? 'Face ID';
+  const label = availability?.label ?? biometricSettingsLabel;
   return (
     <Screen title={label}>
       <AccountGate>
@@ -378,12 +426,17 @@ function DeleteAccount() {
 }
 
 const notificationChannels = [
-  ['roundupsSummary', 'Roundup summary'],
-  ['readyToRedeem', 'Ready to redeem'],
-  ['bankIssues', 'Bank issues'],
+  ['roundupsSummary', 'Roundup updates'],
+  ['bankIssues', 'Bank updates'],
   ['deposits', 'Deposits'],
-  ['trades', 'Trades'],
-  ['riskAlerts', 'Risk alerts'],
+  ['trades', 'Stocks bought and sold'],
+  ['riskAlerts', 'Daily limits'],
+  ['social', 'Friends'],
+  ['withdrawals', 'Money sent to your wallet'],
+  ['weeklySummary', 'Weekly roundup summary'],
+  ['milestones', 'Roundup milestones'],
+  ['appUpdates', 'App updates'],
+  ['setupReminders', 'Setup reminders'],
 ] as const satisfies ReadonlyArray<readonly [keyof NotificationPreferences, string]>;
 
 function NotificationPreferences({ sample }: { sample: boolean }) {
@@ -391,18 +444,25 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
   const auth = useAuth();
   const [permission, setPermission] = useState<NotificationPermissionState | null>(null);
   const [prefs, setPrefs] = useState<NotificationPreferences | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const enablingInSettings = useRef(false);
   const [message, setMessage] = useState<string | null>(null);
 
   const reload = async () => {
-    setPermission(await notificationPermissionState());
+    const nextPermission = await notificationPermissionState();
+    const consent = auth.user?.id ? await hasNotificationConsent(auth.user.id) : false;
+    setPermission(nextPermission === 'granted' && !consent ? 'undetermined' : nextPermission);
     try {
-      setPrefs(
-        await apiRequest<NotificationPreferences>(
-          auth.getAccessToken,
-          '/v1/notification-preferences',
-        ),
-      );
+      let loaded = await apiRequest<NotificationPreferences>(auth.getAccessToken, '/v1/notification-preferences');
+      if (nextPermission === 'granted' && enablingInSettings.current) {
+        const enabled = { ...loaded };
+        for (const [id] of notificationChannels) enabled[id] = true;
+        loaded = await apiRequest<NotificationPreferences>(auth.getAccessToken, '/v1/notification-preferences', { method: 'PUT', body: JSON.stringify(enabled) });
+        enablingInSettings.current = false;
+        if (auth.user?.id) void syncNotificationRegistration(auth.user.id, auth.getAccessToken).catch(() => {});
+      }
+      if (!savingRef.current) setPrefs(loaded);
     } catch (cause) {
       setMessage(
         cause instanceof Error ? cause.message : 'Couldn’t load your notification settings.',
@@ -420,19 +480,42 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
   }, [auth.user?.id]);
 
   async function enablePermission() {
-    setBusy(true);
+    if (savingRef.current || !prefs) return;
+
+    savingRef.current = true;
+    setSaving(true);
     setMessage(null);
     try {
+      if (auth.user?.id) await acceptNotificationConsent(auth.user.id);
+      if (permission === 'denied') {
+        enablingInSettings.current = true;
+        await openNotificationSettings();
+        return;
+      }
       const next = await requestNotificationPermission();
-      posthog?.capture('notification_permission_requested', { granted: next === 'granted' });
       setPermission(next);
+      if (next !== 'granted') return;
+      const enabled = { ...prefs };
+      for (const [id] of notificationChannels) enabled[id] = true;
+      const saved = await apiRequest<NotificationPreferences>(auth.getAccessToken,
+        '/v1/notification-preferences', { method: 'PUT', body: JSON.stringify(enabled) });
+      setPrefs(saved);
+      if (auth.user?.id) {
+        const registered = await syncNotificationRegistration(auth.user.id, auth.getAccessToken);
+        if (!registered) setMessage('Notifications enabled. Device registration will retry.');
+      }
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : 'Couldn’t enable notifications. Try again.');
     } finally {
-      setBusy(false);
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
   async function setChannel(id: keyof NotificationPreferences, enabled: boolean) {
-    if (!prefs) return;
+    if (!prefs || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     const previous = prefs;
     setPrefs({ ...prefs, [id]: enabled });
     setMessage(null);
@@ -446,6 +529,9 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
     } catch (cause) {
       setPrefs(previous);
       setMessage(cause instanceof Error ? cause.message : 'Couldn’t save that preference.');
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   }
 
@@ -458,12 +544,7 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
             Beaver can notify you about roundups, deposits and bank connection issues. You choose
             which ones below.
           </Type>
-          <Button
-            title="Enable notifications"
-            loading={busy}
-            disabled={!prefs}
-            onPress={() => void enablePermission()}
-          />
+          <Button title="Enable notifications" appearance="onboarding" loading={saving} disabled={!prefs} onPress={() => void enablePermission()} />
         </Card>
       ) : permission === 'denied' ? (
         <Card>
@@ -473,9 +554,9 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
             settings, then come back to choose which ones you get.
           </Type>
           <Button
-            title="Open system settings"
-            secondary
-            onPress={() => void openNotificationSettings()}
+            title="Enable notifications"
+            appearance="onboarding"
+            onPress={() => void enablePermission()}
           />
         </Card>
       ) : (
@@ -492,23 +573,33 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
                 borderColor: colors.line,
               }}
             >
-              <Type style={{ flex: 1 }}>{label}</Type>
-              <Switch
-                accessibilityLabel={label}
-                value={prefs?.[id] ?? false}
-                disabled={!prefs}
-                onValueChange={(enabled) => void setChannel(id, enabled)}
-              />
+              <View style={{ flex: 1, paddingVertical: 10 }}>
+                <Type>{label}</Type>
+                <TextButton
+                  title="Preview"
+                  align="leading"
+                  disabled={!prefs}
+                  onPress={() => void previewNotification(id)}
+                />
+              </View>
+              <View style={{ height: 32, justifyContent: 'center', alignSelf: 'center' }}>
+                <Switch
+                  accessibilityLabel={label}
+                  value={prefs?.[id] ?? false}
+                  disabled={!prefs || saving}
+                  onValueChange={(enabled) => void setChannel(id, enabled)}
+                />
+              </View>
             </View>
           ))}
         </View>
       )}
       {message ? <Type accessibilityRole="alert">{message}</Type> : null}
-      <Type variant="caption" muted>
-        {sample
-          ? 'Sample preferences only. Changes stay on this device.'
-          : 'Preferences are saved to your account and apply to future notifications.'}
-      </Type>
+      {sample ? (
+        <Type variant="caption" muted>
+          Sample preferences only. Changes stay on this device.
+        </Type>
+      ) : null}
     </Screen>
   );
 }

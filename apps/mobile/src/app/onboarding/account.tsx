@@ -21,7 +21,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { router } from 'expo-router';
+import { router, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, Type } from '../../components/ui';
 import { OnboardingAnimation } from '../../components/onboarding-animation';
@@ -102,8 +102,10 @@ export default function Account() {
     const completed =
       (serverState !== null && serverState !== 'new') ||
       onboarding.completedUserIds.includes(auth.user?.id ?? '');
-    router.replace(completed ? '/' : '/onboarding/invite-code');
-  }, [auth.getAccessToken, auth.user?.id, onboarding.completedUserIds]);
+    router.replace(
+      (completed ? '/' : (onboarding.resumePath ?? '/onboarding/invite-code')) as Href,
+    );
+  }, [auth.getAccessToken, auth.user?.id, onboarding.completedUserIds, onboarding.resumePath]);
 
   const shakeStyle = useAnimatedStyle(() => ({
     transform: reducedMotion ? [] : [{ translateX: shake.get() }],
@@ -274,7 +276,7 @@ export default function Account() {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1, backgroundColor: colors.background }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"

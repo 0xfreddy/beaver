@@ -1,20 +1,24 @@
-import { useEffect, useState } from 'react';
-import { Image, View } from 'react-native';
+import { useEffect, useMemo } from 'react';
+import { Image, Platform, View } from 'react-native';
 import LottieView from 'lottie-react-native';
 import {
   Canvas,
   ColorMatrix,
   Fill,
-  Group,
   Image as SkiaImage,
-  Paint,
+  Skia,
   useImage,
 } from '@shopify/react-native-skia';
 import { useReducedMotion } from 'react-native-reanimated';
 import { useTheme } from '../theme';
+import { useRasterPlayback } from '../lib/use-raster-playback';
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 const animations = {
+  'country-light': require('../../assets/animations/country-light.json'),
+  'country-dark': require('../../assets/animations/country-dark.json'),
+  notifications: require('../../assets/animations/notifications.json'),
+  update: require('../../assets/animations/update.json'),
   'empty-balance': require('../../assets/animations/empty-balance.json'),
   0: require('../../assets/animations/onboarding-0.json'),
   1: require('../../assets/animations/onboarding-1.json'),
@@ -36,6 +40,9 @@ const animations = {
   spare: require('../../assets/animations/spare.json'),
 } as const;
 const themedRasterAnimations = new Set<keyof typeof animations>([
+  'invite-peek',
+  'notifications',
+  'update',
   'empty-balance',
   'access-code-binoculars',
   'bank-bridge-builder',
@@ -46,9 +53,6 @@ const themedRasterAnimations = new Set<keyof typeof animations>([
   'receipt-scanner',
   'roundup-coin-sorter',
 ]);
-// Photographic artwork whose own black canvas is part of the design: shown
-// full-color in a dark panel instead of being mapped to the theme palette.
-const fullColorRasterAnimations = new Set<keyof typeof animations>(['invite-peek']);
 // Preserve the source Lottie timing, including repeated frame holds.
 const stocksFrames = [
   require('../../assets/animations/stocks-frames/frame-000.jpg'),
@@ -716,6 +720,7 @@ function ThemedRasterFrame({
   backgroundColor,
   foregroundColor,
   monochrome = true,
+  sourceLight = false,
 }: {
   source: number | string;
   width: number;
@@ -725,11 +730,26 @@ function ThemedRasterFrame({
   backgroundColor?: string;
   foregroundColor: string;
   monochrome?: boolean;
+  sourceLight?: boolean;
 }) {
-  const image = useImage(source);
+  // Android's Skia URI loader cannot open data: URLs embedded in Lottie files.
+  // Decode embedded frames directly instead of sending them to the URL loader.
+  const embeddedImage = useMemo(() => {
+    if (typeof source !== 'string' || !source.startsWith('data:')) return null;
+    const separator = source.indexOf(',');
+    if (separator < 0) return null;
+    return Skia.Image.MakeImageFromEncoded(Skia.Data.fromBase64(source.slice(separator + 1)));
+  }, [source]);
+  const loadedImage = useImage(
+    typeof source === 'string' && source.startsWith('data:') ? null : source,
+  );
+  const image = embeddedImage ?? loadedImage;
   const drawWidth = width * scale;
   const drawHeight = height * scale;
   const fallbackSource = typeof source === 'number' ? source : { uri: source };
+  const matrix = sourceLight
+    ? themedMonochromeMatrix(foregroundColor, backgroundColor ?? '#ffffff')
+    : themedMonochromeMatrix(backgroundColor ?? '#000000', foregroundColor);
   const picture = image ? (
     <SkiaImage
       image={image}
@@ -738,7 +758,10 @@ function ThemedRasterFrame({
       width={drawWidth}
       height={drawHeight}
       fit="contain"
-    />
+    >
+      {/* Filter the image directly: a per-frame saveLayer flashes on Android. */}
+      {monochrome ? <ColorMatrix matrix={matrix} /> : null}
+    </SkiaImage>
   ) : null;
   if (!image)
     return (
@@ -752,28 +775,19 @@ function ThemedRasterFrame({
           overflow: 'hidden',
         }}
       >
-        <Image
-          source={fallbackSource}
-          resizeMode="contain"
-          style={{ width: drawWidth, height: drawHeight }}
-        />
+        {!monochrome ? (
+          <Image
+            source={fallbackSource}
+            resizeMode="contain"
+            style={{ width: drawWidth, height: drawHeight }}
+          />
+        ) : null}
       </View>
     );
-  const matrix = themedMonochromeMatrix(backgroundColor ?? '#000000', foregroundColor);
   return (
     <Canvas style={{ width, height }}>
       {monochrome && backgroundColor ? <Fill color={backgroundColor} /> : null}
-      <Group
-        layer={
-          monochrome ? (
-            <Paint>
-              <ColorMatrix matrix={matrix} />
-            </Paint>
-          ) : undefined
-        }
-      >
-        {picture}
-      </Group>
+      {picture}
     </Canvas>
   );
 }
@@ -833,6 +847,7 @@ function RasterFrameAnimation({
   widthRatio = 312 / 270,
   scale = 1,
   monochrome = true,
+  sourceLight = false,
 }: {
   height: number;
   frames: readonly (number | string)[];
@@ -846,34 +861,17 @@ function RasterFrameAnimation({
   widthRatio?: number;
   scale?: number;
   monochrome?: boolean;
+  sourceLight?: boolean;
 }) {
   const frameWidth = height * widthRatio;
-  const [frame, setFrame] = useState(reduced ? Math.floor(frames.length / 2) : 0);
-
-  useEffect(() => {
-    if (progress !== undefined || reduced) {
-      setFrame(Math.floor(frames.length / 2));
-      return;
-    }
-    const startedAt = Date.now();
-    setFrame(0);
-    const timer = setInterval(() => {
-      const elapsed = Date.now() - startedAt;
-      const progress = loop ? (elapsed % duration) / duration : Math.min(1, elapsed / duration);
-      const nextFrame = Math.min(frames.length - 1, Math.floor(progress * frames.length));
-      setFrame((current) => (current === nextFrame ? current : nextFrame));
-      if (!loop && elapsed >= duration) {
-        clearInterval(timer);
-        onAnimationFinish?.();
-      }
-    }, duration / frames.length);
-    return () => clearInterval(timer);
-  }, [duration, frames, loop, onAnimationFinish, progress, reduced]);
-
-  const displayFrame =
-    progress === undefined
-      ? frame
-      : Math.round(Math.max(0, Math.min(1, progress)) * (frames.length - 1));
+  const displayFrame = useRasterPlayback({
+    frameCount: frames.length,
+    duration,
+    loop,
+    reduced,
+    progress,
+    onAnimationFinish,
+  });
 
   return (
     <ThemedRasterFrame
@@ -884,6 +882,7 @@ function RasterFrameAnimation({
       backgroundColor={backgroundColor}
       foregroundColor={foregroundColor}
       monochrome={monochrome}
+      sourceLight={sourceLight}
     />
   );
 }
@@ -920,10 +919,9 @@ export function OnboardingAnimation({
     (name in animations && themedRasterAnimations.has(name as keyof typeof animations));
   const embedded =
     name in animations ? (animations[name as keyof typeof animations] as EmbeddedAnimation) : null;
+  const rasterFrames = useMemo(() => (embedded ? embeddedFrames(embedded) : []), [embedded]);
   const forceThemedRaster =
     name in animations && themedRasterAnimations.has(name as keyof typeof animations);
-  const fullColorRaster =
-    name in animations && fullColorRasterAnimations.has(name as keyof typeof animations);
 
   useEffect(() => {
     if (!reduced || !onAnimationFinish) return;
@@ -948,6 +946,19 @@ export function OnboardingAnimation({
           progress={progress}
           backgroundColor={resolvedBackground}
           foregroundColor={resolvedForeground}
+        />
+      ) : name === 'country-light' || name === 'country-dark' ? (
+        <RasterFrameAnimation
+          key={name}
+          height={height}
+          frames={rasterFrames}
+          duration={((embedded!.op - embedded!.ip) / embedded!.fr) * 1000}
+          loop={false}
+          reduced={reduced}
+          backgroundColor={resolvedBackground}
+          foregroundColor={resolvedForeground}
+          sourceLight={name === 'country-light'}
+          widthRatio={1}
         />
       ) : name === 'crypto-cards' ? (
         // Photographic brand artwork: shown in full color with no backdrop,
@@ -1022,21 +1033,6 @@ export function OnboardingAnimation({
           widthRatio={84 / 52}
           scale={2}
         />
-      ) : fullColorRaster ? (
-        <RasterFrameAnimation
-          key={name}
-          height={height}
-          frames={embeddedFrames(embedded!)}
-          duration={((embedded!.op - embedded!.ip) / embedded!.fr) * 1000}
-          loop={loop ?? (progress === undefined && !oneShot)}
-          progress={progress}
-          reduced={reduced}
-          onAnimationFinish={onAnimationFinish}
-          backgroundColor={resolvedBackground}
-          foregroundColor={resolvedForeground}
-          widthRatio={embedded!.w / embedded!.h}
-          monochrome={false}
-        />
       ) : isDark && !forceThemedRaster && name !== 'privacy' && name !== 'spare' ? (
         <LottieView
           key={name}
@@ -1046,14 +1042,14 @@ export function OnboardingAnimation({
           progress={progress ?? (reduced ? 0.5 : undefined)}
           onAnimationFinish={reduced ? undefined : onAnimationFinish}
           resizeMode="contain"
-          renderMode="AUTOMATIC"
+          renderMode={Platform.OS === 'android' ? 'SOFTWARE' : 'AUTOMATIC'}
           style={{ width: '100%', height: '100%' }}
         />
       ) : (
         <RasterFrameAnimation
           key={name}
           height={height}
-          frames={embeddedFrames(embedded!)}
+          frames={rasterFrames}
           duration={((embedded!.op - embedded!.ip) / embedded!.fr) * 1000}
           loop={loop ?? (progress === undefined && !oneShot)}
           progress={progress}

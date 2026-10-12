@@ -5,11 +5,12 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../providers/auth-provider';
 import { apiRequest } from '../lib/api';
 import { useLive } from '../lib/live';
-import { solscanTxUrl } from '../lib/explorer';
+import { explorerTxUrl } from '../lib/explorer';
 import { Button, Type } from './ui';
 import { AppSymbol } from './app-symbol';
 import { CompanyMark } from './company-mark';
 import { useTheme } from '../theme';
+import { investmentBlockLabel } from '../lib/purchases';
 
 type OrderRow = {
   id: string;
@@ -24,6 +25,7 @@ type OrderRow = {
 
 function statusLabel(status: string) {
   if (status === 'finalized') return 'Completed';
+  if (status === 'pending') return 'Preparing investment';
   return status.charAt(0).toUpperCase() + status.slice(1);
 }
 
@@ -65,17 +67,18 @@ export function LiveOrders() {
           {orders.data.items.map((order) => {
             const expanded = expandedId === order.id;
             const signature = order.signature;
-            const label = statusLabel(order.status);
+            const label =
+              order.errorCode &&
+              ['blocked', 'signed', 'submitted', 'confirmed'].includes(order.status)
+                ? investmentBlockLabel(order.errorCode)
+                : statusLabel(order.status);
             // A finalized order completed when it was last touched; anything else
             // is still moving from when it was placed.
             const when = extendedDate(
               order.status === 'finalized' ? order.updatedAt : order.createdAt,
             );
             return (
-              <View
-                key={order.id}
-                style={[styles.row, { borderBottomColor: colors.line }]}
-              >
+              <View key={order.id} style={[styles.row, { borderBottomColor: colors.line }]}>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityState={{ expanded }}
@@ -107,11 +110,21 @@ export function LiveOrders() {
                       <Type muted>{order.errorCode.toLowerCase().replaceAll('_', ' ')}</Type>
                     ) : null}
                     {signature ? (
-                      <Button
-                        title="Open in Solscan"
-                        secondary
-                        onPress={() => void Linking.openURL(solscanTxUrl(signature))}
-                      />
+                      <Pressable
+                        accessibilityRole="link"
+                        accessibilityLabel="See transaction in Orb"
+                        onPress={() => void Linking.openURL(explorerTxUrl(signature))}
+                        style={({ pressed }) => ({
+                          minHeight: 44,
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 12,
+                          opacity: pressed ? 0.5 : 1,
+                        })}
+                      >
+                        <Type>See transaction</Type>
+                        <AppSymbol name="next" size={16} color={colors.ink} />
+                      </Pressable>
                     ) : null}
                     {!order.signature && ['pending', 'blocked'].includes(order.status) ? (
                       <Button

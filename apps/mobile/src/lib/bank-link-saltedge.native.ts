@@ -17,7 +17,13 @@ export async function openSaltEdgeLink(
   returnUrl: string,
   returnTo = '/onboarding/bank',
 ): Promise<string | null> {
-  if (active) throw new Error('A bank connection is already in progress.');
+  // A session whose widget never resolved (lost redirect, relaunched app) must
+  // not lock the flow until a process restart: supersede it as cancelled.
+  if (active) {
+    const stale = active;
+    active = null;
+    stale.resolve?.(null);
+  }
   const session = { id: String(++sequence), returnUrl, returnTo, resolve: null } as Session;
   active = session;
   try {
@@ -26,7 +32,11 @@ export async function openSaltEdgeLink(
       active.resolve = resolve;
       router.push({
         pathname: '/saltedge/link',
-        params: { url: encodeURIComponent(connectUrl), returnUrl, sessionId: session.id },
+        params: {
+          url: encodeURIComponent(connectUrl),
+          returnUrl,
+          sessionId: session.id,
+        },
       });
     });
   } finally {
@@ -57,6 +67,13 @@ export async function continueSaltEdgeLink(url: string): Promise<boolean> {
   active.lastUrl = url;
   const returnTo = active.returnTo;
   resolveSaltEdge('');
-  router.dismissTo(returnTo as Href);
+  try {
+    router.dismissTo(returnTo as Href);
+  } catch {
+    // The opening screen may not be on the stack after a relaunch; fall back
+    // to a plain pop, then the app root, so this screen never strands the flow.
+    if (router.canGoBack()) router.back();
+    else router.replace('/');
+  }
   return true;
 }

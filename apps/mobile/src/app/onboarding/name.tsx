@@ -8,13 +8,26 @@ import { useTheme } from '../../theme';
 
 export default function Name() {
   const { colors } = useTheme();
-  const { profile, ready, save } = useProfile();
+  const { profile, ready, save, error: profileError, retry } = useProfile();
   const [name, setName] = useState(
     profile.alias && profile.alias !== 'Roundups member' ? profile.alias : '',
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const trimmed = name.trim();
+  const visibleError = error ?? profileError;
+
+  async function retryProfile() {
+    setBusy(true);
+    setError(null);
+    try {
+      await retry();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Couldn’t load your profile. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function continueOnboarding() {
     if (busy || !ready || trimmed.length < 2) return;
@@ -39,10 +52,10 @@ export default function Name() {
       actions={
         <Button
           appearance="onboarding"
-          title="Continue"
-          disabled={!ready || trimmed.length < 2}
+          title={!ready && visibleError ? 'Try again' : 'Continue'}
+          disabled={!ready ? !visibleError : trimmed.length < 2}
           loading={busy}
-          onPress={() => void continueOnboarding()}
+          onPress={() => void (!ready && visibleError ? retryProfile() : continueOnboarding())}
         />
       }
     >
@@ -67,9 +80,9 @@ export default function Name() {
           style={[styles.input, { color: colors.ink, borderBottomColor: colors.ink }]}
         />
       </View>
-      {error ? (
+      {visibleError ? (
         <Type accessibilityRole="alert" muted>
-          {error}
+          {visibleError}
         </Type>
       ) : null}
     </SetupPage>

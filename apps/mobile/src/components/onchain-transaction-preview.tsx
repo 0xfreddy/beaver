@@ -19,9 +19,11 @@ export function formatOnchainTransactionDate(value: string) {
 
 export function OnchainTransactionPreview({
   loading,
+  processing,
   transactions,
 }: {
   loading: boolean;
+  processing?: boolean;
   transactions?: readonly OnchainSpendingTransaction[];
 }) {
   const { colors } = useTheme();
@@ -53,6 +55,24 @@ export function OnchainTransactionPreview({
     );
 
   if (!transactions) return null;
+
+  if (processing)
+    return (
+      <View
+        accessible
+        accessibilityLabel="Transactions are being retrieved in the background"
+        style={styles.root}
+      >
+        <Type variant="headline">Finding your transactions</Type>
+        <View style={[styles.empty, { backgroundColor: colors.surface }]}>
+          <Type style={styles.emptyTitle}>This is continuing in the background</Type>
+          <Type variant="caption" muted>
+            You can finish setup now. Your recent card transactions and roundups will appear
+            shortly.
+          </Type>
+        </View>
+      </View>
+    );
 
   return (
     <View style={styles.root}>

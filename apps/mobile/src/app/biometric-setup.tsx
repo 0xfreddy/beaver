@@ -62,6 +62,7 @@ export default function BiometricSetup() {
 
   return (
     <ScrollView
+      nestedScrollEnabled
       style={{ flex: 1, backgroundColor: colors.background }}
       contentInsetAdjustmentBehavior="automatic"
       contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 20) }]}

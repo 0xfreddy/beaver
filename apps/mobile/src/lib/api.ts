@@ -14,9 +14,63 @@ export class ApiError extends Error {
 
 const sessionRetryLimit = 4;
 
+/** Aborts with a TimeoutError reason, which apiRequest reports as REQUEST_TIMEOUT. */
+export function timeoutSignal(ms: number): AbortSignal {
+  const controller = new AbortController();
+  setTimeout(
+    () =>
+      controller.abort(
+        Object.assign(new Error('The request timed out.'), { name: 'TimeoutError' }),
+      ),
+    ms,
+  );
+  return controller.signal;
+}
+
+function timeoutAbort(signal: AbortSignal | undefined | null) {
+  return (
+    !!signal?.aborted && (signal.reason as { name?: string } | undefined)?.name === 'TimeoutError'
+  );
+}
+
 export function isApiUrlAllowed(url: URL, environment: unknown, developmentRuntime: boolean) {
   if (url.protocol === 'https:') return true;
   return url.protocol === 'http:' && (developmentRuntime || environment === 'development');
+}
+
+/** Bound token acquisition, transport and response parsing, including native promises that ignore abort. */
+export async function withRequestTimeout<T>(
+  operation: (signal: AbortSignal) => Promise<T>,
+  milliseconds: number,
+  parent?: AbortSignal,
+): Promise<T> {
+  const controller = new AbortController();
+  const cancel = () =>
+    controller.abort(
+      parent?.reason ??
+        Object.assign(new Error('The request was aborted.'), { name: 'AbortError' }),
+    );
+  if (parent?.aborted) cancel();
+  parent?.addEventListener('abort', cancel, { once: true });
+  let rejectAbort: () => void = () => {};
+  const cancelled = new Promise<never>((_, reject) => {
+    rejectAbort = () => reject(controller.signal.reason);
+    controller.signal.addEventListener('abort', rejectAbort, { once: true });
+    if (controller.signal.aborted) rejectAbort();
+  });
+  const timer = setTimeout(
+    () =>
+      controller.abort(new ApiError(504, 'REQUEST_TIMEOUT', apiErrorMessage('REQUEST_TIMEOUT'))),
+    milliseconds,
+  );
+  try {
+    if (controller.signal.aborted) return await cancelled;
+    return await Promise.race([operation(controller.signal), cancelled]);
+  } finally {
+    clearTimeout(timer);
+    parent?.removeEventListener('abort', cancel);
+    controller.signal.removeEventListener('abort', rejectAbort);
+  }
 }
 
 /**
@@ -40,15 +94,24 @@ export async function fetchSession(
   getAccessToken: () => Promise<string | null>,
   signal?: AbortSignal,
 ): Promise<AuthSession> {
-  return apiRequest<AuthSession>(
-    async () => {
-      const token = await getAccessToken();
-      if (!token)
-        throw new ApiError(401, 'AUTH_TOKEN_NOT_READY', 'Finishing your sign-in. Please retry.');
-      return token;
-    },
-    '/v1/session',
-    { method: 'POST', signal },
+  return withRequestTimeout(
+    (boundedSignal) =>
+      apiRequest<AuthSession>(
+        async () => {
+          const token = await getAccessToken();
+          if (!token)
+            throw new ApiError(
+              401,
+              'AUTH_TOKEN_NOT_READY',
+              'Finishing your sign-in. Please retry.',
+            );
+          return token;
+        },
+        '/v1/session',
+        { method: 'POST', signal: boundedSignal },
+      ),
+    15_000,
+    signal,
   );
 }
 
@@ -71,6 +134,8 @@ export async function apiRequest<T>(
     );
   const token = await getAccessToken();
   if (options.signal?.aborted) {
+    if (timeoutAbort(options.signal))
+      throw new ApiError(504, 'REQUEST_TIMEOUT', apiErrorMessage('REQUEST_TIMEOUT'));
     const error = new Error('The request was aborted.');
     error.name = 'AbortError';
     throw error;
@@ -87,6 +152,8 @@ export async function apiRequest<T>(
       'Content-Type': 'application/json',
     },
   }).catch((error: unknown) => {
+    if (timeoutAbort(options.signal))
+      throw new ApiError(504, 'REQUEST_TIMEOUT', apiErrorMessage('REQUEST_TIMEOUT'));
     if (options.signal?.aborted) throw error;
     throw new ApiError(
       503,
@@ -114,6 +181,7 @@ export function fetchOnchainSpendingPreview(
 ) {
   return apiRequest<OnchainSpendingPreview>(getAccessToken, '/v1/bank/onchain-preview', {
     method: 'POST',
+    signal: timeoutSignal(30_000),
     body: JSON.stringify({ addresses, provider }),
   });
 }
@@ -129,6 +197,7 @@ export function createCryptoCard(
 ) {
   return apiRequest<CryptoCard>(getAccessToken, '/v1/bank/crypto-cards', {
     method: 'POST',
+    signal: timeoutSignal(30_000),
     body: JSON.stringify({ provider, address }),
   });
 }
@@ -137,6 +206,14 @@ export function deleteCryptoCard(getAccessToken: () => Promise<string | null>, i
   return apiRequest<{ removed: boolean }>(getAccessToken, `/v1/bank/crypto-cards/${id}`, {
     method: 'DELETE',
   });
+}
+
+export function cancelRoundup(getAccessToken: () => Promise<string | null>, transactionId: string) {
+  return apiRequest<{ id: string; status: 'cancelled' }>(
+    getAccessToken,
+    `/v1/transactions/${encodeURIComponent(transactionId)}/roundup/cancel`,
+    { method: 'POST' },
+  );
 }
 
 function apiErrorMessage(code?: string) {
@@ -159,6 +236,7 @@ function apiErrorMessage(code?: string) {
     RECAP_EXPIRED: 'This recap has changed. Refresh your progress and try again.',
     LESSON_ANSWER_INCORRECT: 'Have another look at the explanation and try again.',
     ROUNDUP_NOT_FOUND: 'This completed roundup is no longer available.',
+    ROUNDUP_NOT_CANCELLABLE: 'This roundup is already part of an investment order.',
     POLICY_NOT_FOUND: 'Finish setting up your roundup rules first.',
     SNAPSHOT_EXPIRED: 'This leaderboard changed or expired. Refresh to see the latest.',
     INVITE_RATE_LIMIT: 'You have created 10 invitations this hour. Try again later.',
@@ -169,15 +247,35 @@ function apiErrorMessage(code?: string) {
 
     SOLANA_NOT_CONFIGURED: 'Wallet balances are not available yet. Please try again later.',
     LINK_EXCHANGE_UNCERTAIN:
-      'Your connection needs recovery. Tap Finish bank connection again shortly. If it still fails, start a new connection.',
+      'We couldn’t confirm your bank connection yet. Try again in a moment — your progress is saved.',
     LINK_OWNERSHIP_MISMATCH: 'This connection does not match your account. Start again.',
+    LINK_SESSION_NOT_FOUND: 'This bank connection session is no longer valid. Start again.',
+    LINK_TOKEN_MISMATCH: 'This bank link does not match your session. Start a new connection.',
+    LINK_ALREADY_USED: 'This bank link was already used. Start a new connection.',
+    USE_RELINK_COMPLETION: 'Your bank update is almost done. Try again in a moment.',
+    BANK_ALREADY_LINKED:
+      'That bank is already connected. If it is missing from your list, it may be linked to another account.',
+    BANK_CONNECTION_NOT_COMPLETED:
+      'Your bank did not finish connecting. Start again and complete the sign-in.',
+    BANK_REGION_UNSUPPORTED: 'Bank connections are not available in that region yet.',
+    BANK_RELINK_REQUIRED: 'Your bank needs to be reconnected. Tap Reconnect bank to sign in again.',
+    BANK_DELETED: 'This bank removed the connection. Reconnect it to continue.',
+    BANK_DATA_PENDING: 'Your bank data is still syncing. Check back shortly.',
+    REQUEST_TIMEOUT: 'This is taking longer than expected. Please try again.',
+    SALTEDGE_RATE_LIMITED: 'Your bank provider is busy right now. Wait a minute and try again.',
+    SALTEDGE_UNAVAILABLE: 'Your bank provider is unreachable. Check your connection and try again.',
+    SALTEDGE_REQUEST_FAILED: 'Your bank provider could not complete the request. Please try again.',
+    SALTEDGE_INVALID_RESPONSE: 'Your bank provider sent an unexpected response. Please try again.',
+    SALTEDGE_SYNC_FAILED: 'Your bank data could not be refreshed. Please try again.',
+    SALTEDGE_PAGINATION_LIMIT: 'Your bank history is unusually large. Please try again later.',
+    SALTEDGE_CUSTOMER_UNRESOLVED: 'Your bank profile could not be matched. Please try again.',
     LIVE_ROUNDUPS_NOT_ENABLED: 'Live bank roundups are not enabled yet.',
     CRYPTO_CARD_NOT_FOUND: 'That crypto card address is no longer saved.',
     BANK_NOT_READY: 'Your bank connection is still being prepared. Please try again shortly.',
     MONEYKIT_RATE_LIMITED: 'Your bank needs more time before another refresh. Please try later.',
     BANK_COUNTRY_UNSUPPORTED: 'Bank connections are not supported in that country.',
     BANK_COUNTRY_UNAVAILABLE:
-      'Our bank provider has no connections enabled for this country yet. Please choose another region or use manual receipts while we enable coverage.',
+      'No banks are available for that region yet. Try a different region or check back soon.',
     ACCOUNT_NOT_READY:
       'Wait for the bank’s first sync, or reconnect the bank before selecting accounts.',
     LINK_EXPIRED: 'This bank connection expired. Start again.',
@@ -191,8 +289,11 @@ function apiErrorMessage(code?: string) {
     WALLET_AUTHORIZATION_REQUIRED: 'Approve wallet access before enabling investments.',
     JURISDICTION_NOT_ELIGIBLE: 'Your country must be verified before funding or investing.',
     EXECUTION_NOT_CONFIGURED: 'Trading is not enabled yet.',
-    SELECT_SYNCED_BANK_ACCOUNT: 'Select a synced bank account or choose Manual mode first.',
+    SELECT_SYNCED_BANK_ACCOUNT: 'Your connected accounts are still syncing. Try again shortly.',
+    CONNECTED_ACCOUNTS_AUTOMATIC_ROUNDUPS:
+      'All connected accounts participate automatically. To stop this bank’s roundups, unlink the bank.',
     BANK_NOT_CONFIGURED: 'Bank connections are not configured yet.',
+    BANK_UNAVAILABLE: 'This bank is no longer available. Refresh the bank list and try again.',
     ONCHAIN_SPENDING_NOT_CONFIGURED: 'On-chain bank estimates are not configured yet.',
     ONCHAIN_SCAN_UNAVAILABLE: 'We couldn’t read those addresses right now. Please try again.',
     TUYO_ADDRESS_NOT_FOUND: 'No Tuyo spending account was found for that deposit address.',

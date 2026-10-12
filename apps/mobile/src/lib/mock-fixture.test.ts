@@ -111,7 +111,7 @@ describe('full sample account fixture', () => {
     expect(fixture.manualReceipts.filter((item) => !item.transactionId)).toHaveLength(1);
     expect(fixture.cryptoCard).toMatchObject({ provider: 'EtherFi', label: 'EtherFi Cash' });
     expect(fixture.achievements.definitions).toHaveLength(27);
-    expect(fixture.achievements.awards).toHaveLength(4);
+    expect(fixture.achievements.awards).toHaveLength(6);
     expect(fixture.achievements.distinctFriends).toBe(5);
     expect(fixture.globalLeaderboard.rows).toHaveLength(12);
     expect(fixture.friendsLeaderboard.rows).toHaveLength(6);

@@ -53,7 +53,8 @@ const companyNames: Record<string, string> = {
   CMG: 'Chipotle Mexican Grill',
   UBER: 'Uber Technologies',
   SBUX: 'Starbucks',
-  USDC: 'USDC cash',
+  USDC: 'Available cash',
+  PENDING: 'Pending roundups',
 };
 const USDC_COLOR = '#2775CA';
 const palette: Record<string, string> = {
@@ -64,6 +65,7 @@ const palette: Record<string, string> = {
   AMZN: '#FF9900',
   NFLX: '#E50914',
   USDC: USDC_COLOR,
+  PENDING: '#8E8E93',
 };
 function Segment({
   start,
@@ -381,6 +383,8 @@ export function useAllocationChart(
             {selected ? (
               selected.symbol === 'USDC' ? (
                 <AppSymbol name="savings" color={USDC_COLOR} size={20} />
+              ) : selected.symbol === 'PENDING' ? (
+                <AppSymbol name="hourglass" color={colors.muted} size={20} />
               ) : (
                 <CompanyMark symbol={selected.symbol} size={20} />
               )

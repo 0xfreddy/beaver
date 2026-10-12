@@ -32,6 +32,8 @@ function mergePreviews(previews: readonly (OnchainSpendingPreview | null)[]) {
   });
   return {
     mode: 'historical_preview',
+    status: present.some((preview) => preview.status === 'processing') ? 'processing' : 'complete',
+    durationMs: Math.max(...present.map((preview) => preview.durationMs ?? 0)),
     provider: 'etherfi',
     roundingIncrementCents: present[0]!.roundingIncrementCents,
     roundupPercentage: present[0]!.roundupPercentage,
@@ -155,7 +157,11 @@ export function CryptoCards() {
       ) : null}
       {items.length && previewError ? <Type accessibilityRole="alert">{previewError}</Type> : null}
       {items.length ? (
-        <OnchainTransactionPreview loading={previewLoading} transactions={preview?.transactions} />
+        <OnchainTransactionPreview
+          loading={previewLoading}
+          processing={preview?.status === 'processing'}
+          transactions={preview?.transactions}
+        />
       ) : null}
       <View style={styles.addAction}>
         <Button

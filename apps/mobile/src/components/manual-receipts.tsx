@@ -1,3 +1,4 @@
+import { ReceiptOutcome } from './receipt-outcome';
 import { money, roundupStateLabel, type Purchase } from '../lib/purchases';
 import { router, Stack } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -17,7 +18,7 @@ import { ManualGuideVideo } from './manual-guide-video';
 import { ReceiptDatePicker } from './receipt-date-picker';
 import { localReceiptDate } from '../lib/receipt-date';
 import { posthog } from '../lib/telemetry';
-import { solscanTxUrl } from '../lib/explorer';
+import { explorerTxUrl } from '../lib/explorer';
 import { CompanyMark, MerchantIcon } from './company-mark';
 
 // Mirrors the currencies the confirm endpoint accepts; USD needs no conversion.
@@ -319,54 +320,13 @@ export function ManualReceipts() {
           }}
         >
           <OnboardingAnimation name="funding-thumbs-up" height={120} loop={false} />
-          {purchasedName ? (
-            <View
-              accessibilityRole="header"
-              accessibilityLabel={`You got ${purchasedName}`}
-              style={{ alignItems: 'center', gap: 12 }}
-            >
-              <Type variant="title" accessibilityElementsHidden style={{ textAlign: 'center' }}>
-                You got
-              </Type>
-              <View
-                style={styles.stockChip}
-                accessibilityElementsHidden
-                importantForAccessibility="no-hide-descendants"
-              >
-                <CompanyMark symbol={purchasedSymbol ?? undefined} size={36} />
-                <Type numberOfLines={1} style={styles.stockChipLabel}>
-                  {purchasedName}
-                </Type>
-              </View>
-            </View>
-          ) : (
-            <Type variant="headline" style={{ textAlign: 'center' }}>
-              {saved.alreadyConfirmed
-                ? 'Already saved'
-                : saved.preview
-                  ? 'Saved as preview'
-                  : purchasedName
-                    ? `${purchasedName} roundup completed`
-                    : 'Roundup completed'}
-            </Type>
-          )}
-          <Type muted style={{ textAlign: 'center' }}>
-            {saved.alreadyConfirmed
-              ? 'This purchase was already recorded. Check Activity for its roundup.'
-              : saved.preview
-                ? 'No money was invested yet. Automatic investing is paused — turn it on so your purchases invest.'
-                : saved.roundupCents > 0
-                  ? `${money(saved.roundupCents, saved.currency)} from this purchase is set aside${
-                      purchasedSymbol ? ` for ${purchasedSymbol}` : ' for investing'
-                    }.`
-                  : 'This purchase was already at a whole amount, so its roundup is $0.00.'}
-          </Type>
+          <ReceiptOutcome transactionId={saved.transactionId} name={purchasedName} preview={saved.preview} alreadyConfirmed={saved.alreadyConfirmed} />
           {investable ? (
             purchaseSignature ? (
               <Button
                 title="View on Solana"
                 secondary
-                onPress={() => void Linking.openURL(solscanTxUrl(purchaseSignature))}
+                onPress={() => void Linking.openURL(explorerTxUrl(purchaseSignature))}
               />
             ) : (
               <Type variant="caption" muted>

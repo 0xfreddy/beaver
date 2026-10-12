@@ -1,5 +1,4 @@
 import { RetentionProgress } from './retention-progress';
-import { AppSymbol } from './app-symbol';
 import { useMockData } from '../providers/mock-data-provider';
 import { useEffect, useState } from 'react';
 import {
@@ -10,7 +9,6 @@ import {
   View,
   ActivityIndicator,
   RefreshControl,
-  Image,
   useWindowDimensions,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -26,16 +24,26 @@ import { useTheme } from '../theme';
 import { apiRequest } from '../lib/api';
 import { useLive } from '../lib/live';
 import { achievementAssets } from '../lib/achievement-assets';
-import { achievementColumns } from '../lib/achievements';
+import { AchievementCoin } from './achievement-coin';
 export default function Leaderboards() {
   const sample = useMockData();
   const params = useLocalSearchParams<{ scope?: string }>();
   const { height } = useWindowDimensions();
   const [scope, setScope] = useState<'global' | 'friends' | 'achievements'>(
-    params.scope === 'global' ? 'global' : 'friends',
+    params.scope === 'achievements'
+      ? 'achievements'
+      : params.scope === 'global'
+        ? 'global'
+        : 'friends',
   );
   useEffect(() => {
-    setScope(params.scope === 'global' ? 'global' : 'friends');
+    setScope(
+      params.scope === 'achievements'
+        ? 'achievements'
+        : params.scope === 'global'
+          ? 'global'
+          : 'friends',
+    );
   }, [params.scope]);
   const [actionError, setActionError] = useState('');
   const auth = useAuth(),
@@ -215,9 +223,6 @@ export default function Leaderboards() {
             ) : null}
             {auth.session && scope !== 'achievements' ? (
               <>
-                <Type muted>
-                  Beaver Points reward useful habits. Your spending and portfolio stay private.
-                </Type>
                 <RetentionProgress />
                 {first ? (
                   <Type variant="headline">
@@ -330,102 +335,52 @@ export default function Leaderboards() {
 
 function AchievementsPanel() {
   const auth = useAuth();
-  const { colors } = useTheme();
   const query = useLive<AchievementSummary>('/v1/social/achievements');
   const summary = auth.session ? query.data : undefined;
-  const { width, fontScale } = useWindowDimensions();
-  const columns = achievementColumns(width, fontScale);
-
+  const { width } = useWindowDimensions();
+  const cell = Math.floor((Math.min(width, 600) - 48 - 24) / 3);
   if (!auth.session) return null;
-  if (query.isPending) return <Type>Loading achievements…</Type>;
-  if (query.error)
-    return (
-      <>
-        <Type accessibilityRole="alert">{query.error.message}</Type>
-        <Button title="Retry" secondary onPress={() => void query.refetch()} />
-      </>
-    );
-  if (!summary) return null;
-
+  if (query.isPending) return <Type muted>Loading achievements…</Type>;
+  if (!summary)
+    return <Button title="Retry achievements" secondary onPress={() => void query.refetch()} />;
+  const unlocked = summary.definitions.filter((d) =>
+    summary.awards.some((a) => a.definitionId === d.id),
+  ).length;
   return (
-    <View style={{ gap: 14 }}>
-      <Type variant="headline">
-        {summary.awards.length} of {summary.definitions.length} unlocked
+    <View style={{ gap: 24 }}>
+      <Type variant="headline" style={{ textAlign: 'center' }}>
+        {unlocked} of {summary.definitions.length}
       </Type>
-      <Type muted>
-        Permanent milestones, at your pace. Achievements don’t add leaderboard points.
-      </Type>
-      {[...new Set(summary.definitions.map((d) => d.group ?? 'Earlier achievements'))].map(
-        (group) => (
-          <View key={group} style={{ gap: 12 }}>
-            <Type variant="headline">{group}</Type>
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-              {summary.definitions
-                .filter((d) => (d.group ?? 'Earlier achievements') === group)
-                .map((definition) => {
-                  const earned = summary.awards.some(
-                    (award) => award.definitionId === definition.id,
-                  );
-                  return (
-                    <Pressable
-                      key={definition.id}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${definition.title}, ${earned ? 'earned' : 'locked'}, ${definition.group ?? 'Achievement'}`}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/achievement/[id]',
-                          params: { id: definition.id },
-                        })
-                      }
-                      style={({ pressed }) => ({
-                        width: `${100 / columns - (columns === 1 ? 0 : 2.5)}%`,
-                        flexGrow: 1,
-                        padding: 8,
-                        borderRadius: 16,
-                        borderCurve: 'continuous',
-                        backgroundColor: pressed ? colors.soft : colors.surface,
-                        alignItems: 'center',
-                        gap: 8,
-                        borderWidth: 1,
-                        borderColor: colors.line,
-                      })}
-                    >
-                      {achievementAssets[definition.assetKey] ? (
-                        <Image
-                          source={achievementAssets[definition.assetKey]!.thumbnail}
-                          accessible={false}
-                          resizeMode="contain"
-                          style={{ width: 88, height: 88, opacity: earned ? 1 : 0.65 }}
-                        />
-                      ) : (
-                        <View
-                          style={{
-                            width: 64,
-                            height: 64,
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                          }}
-                        >
-                          <AppSymbol
-                            name={earned ? 'check' : 'lock'}
-                            color={colors.muted}
-                            size={28}
-                          />
-                        </View>
-                      )}
-                      <Type variant="caption" style={{ textAlign: 'center', fontWeight: '600' }}>
-                        {definition.title}
-                      </Type>
-                      <Type variant="caption" muted>
-                        {earned ? 'Earned' : 'Locked'}
-                      </Type>
-                    </Pressable>
-                  );
-                })}
-            </View>
-          </View>
-        ),
-      )}
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+        {summary.definitions.map((definition) => {
+          const earned = summary.awards.some((award) => award.definitionId === definition.id);
+          const asset = achievementAssets[definition.assetKey || definition.id];
+          return (
+            <Pressable
+              key={definition.id}
+              disabled={!earned}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: !earned }}
+              accessibilityLabel={`${definition.title}, ${earned ? 'unlocked' : 'locked'}. ${definition.description}`}
+              onPress={() =>
+                router.push({ pathname: '/achievement/[id]', params: { id: definition.id } })
+              }
+              style={({ pressed }) => ({
+                width: cell,
+                alignItems: 'center',
+                gap: 8,
+                paddingVertical: 8,
+                opacity: pressed ? 0.75 : 1,
+              })}
+            >
+              {asset && <AchievementCoin source={asset.thumbnail} size={cell} locked={!earned} />}
+              <Type variant="caption" style={{ textAlign: 'center', fontSize: 12 }} muted={!earned}>
+                {definition.title}
+              </Type>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

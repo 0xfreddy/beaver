@@ -1,11 +1,11 @@
 import { CompanyMark } from './company-mark';
 import { OnboardingAnimation } from './onboarding-animation';
 import { OnboardingNotificationCard } from './onboarding-notification-stack';
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
 import { router } from 'expo-router';
-import { FlashList, type FlashListRef } from '@shopify/flash-list';
+import { FlashList } from '@shopify/flash-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, TextButton, Type } from './ui';
 import { useLive, type Holdings, type InvestmentPolicy } from '../lib/live';
@@ -18,11 +18,6 @@ import { useTheme } from '../theme';
 const selectedCardText = '#1B1B1B';
 const selectedCardCaption = '#686868';
 const PAGE_SIZE = 24;
-const letterFor = (name: string) => {
-  const letter = name.trim().charAt(0).toUpperCase();
-  return letter >= 'A' && letter <= 'Z' ? letter : '#';
-};
-
 type MarketItem = {
   symbol: string;
   name: string;
@@ -44,8 +39,6 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
-  const listRef = useRef<FlashListRef<MarketItem>>(null);
-  const [pendingIndex, setPendingIndex] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [message, setMessage] = useState('');
@@ -70,34 +63,11 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
     [deferredSearch, items],
   );
   const visibleItems = filteredItems.slice(0, visibleCount);
-  const letters = useMemo(
-    () => [...new Set(filteredItems.map((stock) => letterFor(stock.name)))],
-    [filteredItems],
-  );
   const loadMore = useCallback(() => {
     setVisibleCount((count) =>
       count >= filteredItems.length ? count : Math.min(filteredItems.length, count + PAGE_SIZE),
     );
   }, [filteredItems.length]);
-  const jumpToLetter = useCallback(
-    (letter: string) => {
-      const index = filteredItems.findIndex((stock) => letterFor(stock.name) === letter);
-      if (index < 0) return;
-      setVisibleCount((count) =>
-        Math.max(count, Math.min(filteredItems.length, index + PAGE_SIZE)),
-      );
-      setPendingIndex(index);
-    },
-    [filteredItems],
-  );
-  useEffect(() => {
-    if (pendingIndex === null || pendingIndex >= visibleItems.length) return;
-    const frame = requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index: pendingIndex, animated: true, viewPosition: 0.08 });
-      setPendingIndex(null);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [pendingIndex, visibleItems.length]);
   async function save() {
     setBusy(true);
     setMessage('');
@@ -111,7 +81,7 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
       else {
         // Confirm the save on the button itself, then dismiss the sheet.
         setSaved(true);
-        setTimeout(() => router.back(), 500);
+        router.back();
       }
     } catch (e) {
       setMessage(e instanceof Error ? e.message : 'Could not save.');
@@ -137,17 +107,20 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
             </View>
           ) : null}
           {onContinue ? <Type variant="title">What about unknown transactions?</Type> : null}
-          <Type muted>
-            Eligible purchases without a stock match can round up into a stock of your choice, or be
-            left unmatched.
-          </Type>
+          <Type muted>Choose a stock for roundups when a merchant has no stock match.</Type>
+          {catalog.data ? (
+            <Type variant="caption" muted style={styles.resultCount}>
+              {search.trim()
+                ? `${filteredItems.length.toLocaleString()} matches · ${items.length.toLocaleString()} supported stocks`
+                : `${items.length.toLocaleString()} supported stocks`}
+            </Type>
+          ) : null}
           <TextInput
             accessibilityLabel="Search supported stocks"
             value={search}
             onChangeText={(value) => {
               setSearch(value);
               setVisibleCount(PAGE_SIZE);
-              setPendingIndex(null);
             }}
             placeholder="Search stocks"
             placeholderTextColor={colors.muted}
@@ -166,13 +139,6 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
           />
           {catalog.isPending ? <Type muted>Loading purchasable stocks…</Type> : null}
           {catalog.error ? <Type accessibilityRole="alert">{catalog.error.message}</Type> : null}
-          {catalog.data ? (
-            <Type variant="caption" muted style={styles.resultCount}>
-              {search.trim()
-                ? `${filteredItems.length.toLocaleString()} matches · ${items.length.toLocaleString()} supported stocks`
-                : `${items.length.toLocaleString()} supported stocks`}
-            </Type>
-          ) : null}
         </>
       ) : null}
     </View>
@@ -181,9 +147,7 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
     <>
       <Button
         appearance="onboarding"
-        title={
-          onContinue ? 'Save and continue' : saved ? 'Saved' : 'Save stock'
-        }
+        title={onContinue ? 'Save and continue' : saved ? 'Saved' : 'Save stock'}
         loading={busy}
         disabled={
           saved ||
@@ -214,26 +178,6 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
       )}
     </>
   );
-  const letterRail =
-    revealed && catalog.data && letters.length > 1 ? (
-      <View
-        accessibilityLabel="Stock list alphabet index"
-        style={[styles.letterRail, { backgroundColor: colors.surface, borderColor: colors.line }]}
-      >
-        {letters.map((letter) => (
-          <Pressable
-            key={letter}
-            accessibilityRole="button"
-            accessibilityLabel={`Jump to stocks beginning with ${letter}`}
-            hitSlop={{ left: 8, right: 8, top: 2, bottom: 2 }}
-            onPress={() => jumpToLetter(letter)}
-            style={styles.letterButton}
-          >
-            <Type style={styles.letter}>{letter}</Type>
-          </Pressable>
-        ))}
-      </View>
-    ) : null;
   const footer = (
     <View style={styles.footer}>
       {catalog.data && filteredItems.length === 0 ? (
@@ -248,7 +192,6 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
     // black like every other screen instead of the system sheet material.
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <FlashList
-        ref={listRef}
         data={revealed ? visibleItems : []}
         extraData={{ chosen, busy, owned }}
         keyExtractor={(stock) => stock.symbol}
@@ -258,7 +201,7 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
         contentContainerStyle={{
           paddingTop: onContinue ? insets.top + 24 : 24,
           paddingLeft: 28,
-          paddingRight: 42,
+          paddingRight: 28,
           paddingBottom: 24,
         }}
         ListHeaderComponent={
@@ -286,7 +229,9 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
                 selected && styles.stockRowSelected,
               ]}
             >
-              <CompanyMark symbol={stock.symbol} size={44} unframed />
+              <View style={{ borderRadius: 8, overflow: 'hidden' }}>
+                <CompanyMark symbol={stock.symbol} size={44} unframed />
+              </View>
               <View style={{ flex: 1 }}>
                 <Type style={selected ? { color: selectedCardText } : undefined}>{stock.name}</Type>
                 <Type
@@ -316,7 +261,6 @@ export function FallbackStock({ onContinue }: { onContinue?: () => void }) {
           {action}
         </View>
       ) : null}
-      {letterRail}
     </View>
   );
 }
@@ -353,24 +297,4 @@ const styles = StyleSheet.create({
     boxShadow: '0 8px 20px rgba(0,0,0,0.18)',
   },
   resultCount: { fontVariant: ['tabular-nums'] },
-  letterRail: {
-    position: 'absolute',
-    right: 4,
-    top: 148,
-    bottom: 132,
-    minWidth: 24,
-    paddingVertical: 4,
-    borderWidth: 0.5,
-    borderRadius: 12,
-    borderCurve: 'continuous',
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-  },
-  letterButton: {
-    minWidth: 22,
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  letter: { fontSize: 10, lineHeight: 12, fontWeight: '600' },
 });

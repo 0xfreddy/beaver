@@ -14,8 +14,11 @@ import {
 } from '@privy-io/expo';
 import { PrivyElements, PrivyUIError, useFundSolanaWallet } from '@privy-io/expo/ui';
 import { fetchSession, sessionRetryDelay, shouldRetrySession } from '../lib/api';
+import { disconnectNotificationDevice } from '../lib/notification-registration';
 import { devnetDepositOptions } from '../lib/deposit-options';
-import { isMockDataActive } from '../lib/mock-data';
+import { isMockDataActive, isMockDataEligible } from '../lib/mock-data';
+import { shouldUseSampleAuth } from '../lib/sample-auth';
+import { SampleAuthProvider } from './sample-auth-provider';
 import { normalizePhoneNumber } from '../lib/phone';
 import { isInternalTester, posthog, setInternalTeamTester } from '../lib/telemetry';
 import { useTheme } from '../theme';
@@ -118,6 +121,7 @@ function SessionBridge({ children }: PropsWithChildren) {
     previousUserId.current = userId;
   }, [userId, queryClient]);
 
+  const analyticsUserId = reviewSession?.user.id ?? sessionQuery.data?.user.id;
   useEffect(() => {
     if (!userId) {
       if (identifiedUserId.current) posthog?.reset();
@@ -125,18 +129,19 @@ function SessionBridge({ children }: PropsWithChildren) {
       setInternalTeamTester(false);
       return;
     }
-    if (identifiedUserId.current && identifiedUserId.current !== userId) posthog?.reset();
+    if (!analyticsUserId) return;
+    if (identifiedUserId.current && identifiedUserId.current !== analyticsUserId) posthog?.reset();
     // Review/sample sessions and the team's own accounts are marked as persons
     // and on every event, so product dashboards can exclude them cleanly.
     const internal = !!reviewSession || isInternalTester(userEmail);
-    posthog?.identify(userId, {
+    posthog?.identify(analyticsUserId, {
       ...(userEmail ? { email: userEmail } : {}),
       internal_team: internal,
       ...(reviewSession ? { synthetic_user: true } : {}),
     });
     setInternalTeamTester(internal);
-    identifiedUserId.current = userId;
-  }, [userId, userEmail, reviewSession]);
+    identifiedUserId.current = analyticsUserId;
+  }, [userId, analyticsUserId, userEmail, reviewSession]);
 
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
@@ -274,6 +279,11 @@ function SessionBridge({ children }: PropsWithChildren) {
           await login({ provider: 'google' });
         },
         async logout() {
+          if (!reviewSession && !isMockDataActive()) {
+            await disconnectNotificationDevice(privy.getAccessToken).catch(() => {
+              posthog?.capture('notification_unregister_failed');
+            });
+          }
           await queryClient.cancelQueries();
           setReviewSession(null);
           await clearReviewSession();
@@ -369,6 +379,8 @@ function SessionBridge({ children }: PropsWithChildren) {
 export function AuthProvider({ children }: PropsWithChildren) {
   const appId = process.env.EXPO_PUBLIC_PRIVY_APP_ID?.trim();
   const clientId = process.env.EXPO_PUBLIC_PRIVY_CLIENT_ID?.trim();
+  if (shouldUseSampleAuth(isMockDataEligible(), appId, clientId))
+    return <SampleAuthProvider>{children}</SampleAuthProvider>;
   if (!appId || !clientId)
     return (
       <UnavailableAuthProvider reason="Sign-in is not configured for this build.">

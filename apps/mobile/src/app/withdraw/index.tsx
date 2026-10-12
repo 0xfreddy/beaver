@@ -13,6 +13,9 @@ import { randomUUID } from 'expo-crypto';
 import * as Haptics from 'expo-haptics';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { WithdrawalDestinationProof } from '@roundups/types';
+import { MobileWalletDestination } from '../../components/mobile-wallet-destination';
+import { destinationProofIsCurrent } from '../../lib/mobile-wallet-proof';
 import { AccountGate } from '../../components/account-gate';
 import { AppSymbol } from '../../components/app-symbol';
 import { AssetMark } from '../../components/asset-mark';
@@ -22,6 +25,7 @@ import { OnboardingAnimation } from '../../components/onboarding-animation';
 import { Button, Card, Screen, TextButton, Type } from '../../components/ui';
 import { NumberFlow } from '../../components/reacticx/number-flow';
 import { SpinButton } from '../../components/reacticx/spin-button';
+import { useMockData } from '../../providers/mock-data-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { ApiError, apiRequest } from '../../lib/api';
 import { authenticateWithBiometrics } from '../../lib/biometric-auth';
@@ -49,14 +53,16 @@ interface WithdrawalReceipt {
 }
 
 export default function Withdraw() {
+  const auth = useAuth();
   return (
     <AccountGate>
-      <WithdrawAccount />
+      <WithdrawAccount key={auth.user?.id ?? 'signed-out'} />
     </AccountGate>
   );
 }
 
 function WithdrawAccount() {
+  const mock = useMockData();
   const auth = useAuth();
   const cache = useQueryClient();
   const { colors } = useTheme();
@@ -69,11 +75,14 @@ function WithdrawAccount() {
   const [amountCents, setAmountCents] = useState(0);
   const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [address, setAddress] = useState('');
+  const [destinationProof, setDestinationProof] = useState<WithdrawalDestinationProof | null>(null);
+  const [walletBusy, setWalletBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sliderReset, setSliderReset] = useState(0);
   const intent = useRef<{
     key: string;
     destination: string;
+    destinationProofId?: string;
     cashRaw: string | null;
     assets: { symbol: string; rawAmount: string }[];
   } | null>(null);
@@ -118,6 +127,17 @@ function WithdrawAccount() {
 
   const withdraw = useMutation({
     mutationFn: async (): Promise<WithdrawalReceipt> => {
+      if (walletBusy) throw new Error('Finish wallet verification first.');
+      if (
+        !intent.current &&
+        destinationProof &&
+        !destinationProofIsCurrent(
+          destinationProof,
+          address.trim(),
+          process.env.EXPO_PUBLIC_SOLANA_NETWORK === 'mainnet' ? 'mainnet' : 'devnet',
+        )
+      )
+        throw new Error('Wallet verification expired. Use my wallet again to verify your address.');
       await authenticateWithBiometrics('Approve withdrawal');
       // The whole request is frozen on the first attempt so a retry replays it
       // exactly; editing the selection mints a fresh intent and key instead.
@@ -125,6 +145,7 @@ function WithdrawAccount() {
         intent.current = {
           key: randomUUID(),
           destination: address.trim(),
+          ...(destinationProof ? { destinationProofId: destinationProof.id } : {}),
           cashRaw: amountCents > 0 ? (BigInt(amountCents) * 10_000n).toString() : null,
           assets: selectedStocks.map((item) => ({
             symbol: item.symbol,
@@ -138,6 +159,7 @@ function WithdrawAccount() {
         body: JSON.stringify({
           network: 'solana',
           destination: request.destination,
+          ...(request.destinationProofId ? { destinationProofId: request.destinationProofId } : {}),
           cashRaw: request.cashRaw,
           assets: request.assets,
         }),
@@ -145,13 +167,13 @@ function WithdrawAccount() {
     },
     onSuccess: async () => {
       intent.current = null;
-      posthog?.capture('withdrawal_succeeded', { assets: selectionCount });
+      posthog?.capture('withdrawal_submitted', { assets: selectionCount });
       await cache.invalidateQueries({ queryKey: ['live', auth.user?.id] });
       setStep('done');
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     },
     onError: (cause) => {
-      posthog?.capture('withdrawal_failed');
+      posthog?.capture('withdrawal_submission_failed');
       setError(withdrawalErrorMessage(cause));
       setSliderReset((value) => value + 1);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
@@ -214,7 +236,7 @@ function WithdrawAccount() {
   }
 
   function confirmWithdrawal() {
-    if (withdraw.isPending) return;
+    if (withdraw.isPending || walletBusy) return;
     if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address.trim())) {
       setError('Enter a valid Solana wallet address.');
       setSliderReset((value) => value + 1);
@@ -226,13 +248,12 @@ function WithdrawAccount() {
     withdraw.mutate();
   }
 
-  // TEMP-DEMO-VERIFY: deep-link ?demo=amount / ?demo=review drives the flow for
-  // headless simulator screenshots. Removed after verification.
+  // Sample-only deep links support screenshots; never inject amounts or outcomes into live accounts.
   const params = useLocalSearchParams<{ demo?: string }>();
   const demoDone = useRef<string | null>(null);
   const [demoPending, setDemoPending] = useState(false);
   useEffect(() => {
-    if (!params.demo || demoDone.current === params.demo) return;
+    if (!mock.ready || !mock.active || !params.demo || demoDone.current === params.demo) return;
     if (params.demo === 'reset') {
       demoDone.current = params.demo;
       void (async () => {
@@ -268,7 +289,7 @@ function WithdrawAccount() {
       setStep('done');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [params.demo, balances.isSuccess, availableCents, eligibleSymbols]);
+  }, [params.demo, balances.isSuccess, availableCents, eligibleSymbols, mock.ready, mock.active]);
 
   const loading = balances.isLoading || holdings.isLoading;
   // Only a confirmed all-zero account may collapse the flow into the empty state;
@@ -307,7 +328,7 @@ function WithdrawAccount() {
       {/* formSheets lay out one ScrollView only — extra wrappers or pinned overlays
           beside it break the native sheet layout (blank body). The action bar
           therefore scrolls as the sheet's last block. */}
-      <Screen compact keyboard title="Withdraw">
+      <Screen compact keyboard fillContent title="Withdraw">
         {step === 'form' ? (
           <View style={styles.formStep}>
             <Card style={styles.amountCard}>
@@ -455,6 +476,25 @@ function WithdrawAccount() {
                 </Type>
               ) : null}
             </Card>
+            <MobileWalletDestination
+              disabled={withdraw.isPending || !!intent.current}
+              onBusy={setWalletBusy}
+              onVerified={(proof) => {
+                setDestinationProof(proof);
+                setAddress(proof.address);
+                setError(null);
+              }}
+            />
+            {destinationProof && destinationProof.address === address ? (
+              <Type variant="caption" accessibilityLiveRegion="polite">
+                Wallet signed this address. Verification expires at{' '}
+                {new Date(destinationProof.expiresAt).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
+                .
+              </Type>
+            ) : null}
             <View style={styles.field}>
               <Type variant="caption" muted>
                 Solana address
@@ -463,8 +503,10 @@ function WithdrawAccount() {
                 accessibilityLabel="Destination Solana wallet address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                editable={!walletBusy && !withdraw.isPending && !intent.current}
                 value={address}
                 onChangeText={(value) => {
+                  setDestinationProof(null);
                   setAddress(value.trim());
                   setError(null);
                 }}
@@ -495,14 +537,8 @@ function WithdrawAccount() {
                     withdraw.data?.totalUsdcRaw ?? (payoutCents * 10_000n).toString(),
                     6,
                   )}{' '}
-                  USDC is on its way to {shortAddress(address.trim())} on Solana. Stock sales finish
-                  before the transfer is sent.
+                  USDC to {shortAddress(address.trim())}. We’ll notify you when it’s sent.
                 </Type>
-                {withdraw.data ? (
-                  <Type variant="caption" muted>
-                    Reference {withdraw.data.id}
-                  </Type>
-                ) : null}
               </View>
             </View>
           </Card>
@@ -567,6 +603,7 @@ function WithdrawAccount() {
                   label="Slide to withdraw"
                   hint="Submits the withdrawal to your Solana wallet"
                   busy={withdraw.isPending}
+                  disabled={walletBusy}
                   resetSignal={sliderReset}
                   onConfirm={confirmWithdrawal}
                 />
@@ -699,6 +736,8 @@ function ReviewRow({
 }
 
 function withdrawalErrorMessage(cause: unknown) {
+  if (cause instanceof ApiError && cause.code === 'DESTINATION_VERIFICATION_REQUIRED')
+    return 'Wallet verification expired or was already used. Edit the withdrawal and verify your wallet again.';
   if (cause instanceof ApiError && cause.status === 404)
     return 'Withdrawals aren’t enabled on this service yet. The backend needs a withdrawal endpoint before funds can move.';
   if (cause instanceof Error && cause.message) return cause.message;
@@ -853,6 +892,6 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 2,
     paddingTop: 14,
-    marginTop: 4,
+    marginTop: 'auto',
   },
 });

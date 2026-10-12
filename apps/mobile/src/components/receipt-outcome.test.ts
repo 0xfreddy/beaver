@@ -1,0 +1,22 @@
+import React from 'react';
+import { act, create } from 'react-test-renderer';
+import { afterEach, expect, it, vi } from 'vitest';
+const state=vi.hoisted(()=>({status:'redeeming'}));
+vi.mock('react-native',()=>({View:'View'}));
+vi.mock('./ui',()=>({Type:'Type'}));
+vi.mock('../lib/live',()=>({useLive:()=>({data:{roundupStatus:state.status,symbol:'AAPL'}})}));
+import { ReceiptOutcome } from './receipt-outcome';
+afterEach(()=>vi.unstubAllGlobals());
+it('only claims completion once the investment is finalized',async()=>{
+ vi.stubGlobal('React',React);vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT',true);
+ const props={transactionId:'test',name:'Apple xStock',preview:false,alreadyConfirmed:false};
+ let r:ReturnType<typeof create>;
+ await act(async()=>{r=create(React.createElement(ReceiptOutcome,props));});
+ expect(JSON.stringify(r!.toJSON())).toContain('submitted');
+ expect(JSON.stringify(r!.toJSON())).not.toContain('You now hold');
+ state.status='redeemed';await act(async()=>r!.update(React.createElement(ReceiptOutcome,{...props})));
+ expect(JSON.stringify(r!.toJSON())).toContain('completed');
+ expect(JSON.stringify(r!.toJSON())).toContain('You now hold');
+ expect(JSON.stringify(r!.toJSON())).not.toContain('xStock');
+ await act(async()=>r!.unmount());
+});

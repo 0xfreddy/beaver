@@ -8,12 +8,12 @@ import {
   accountSpendingStoragePrefix,
 } from './onboarding-storage';
 
-export const REVIEW_AUTH_EMAIL = 'app-review@trybeaver.app';
+export const REVIEW_AUTH_EMAIL = 'review@example.invalid';
 /** Alphanumeric access code shared with App Review; the original six-digit form stays accepted. */
-export const REVIEW_AUTH_CODE = 'A9RV';
+export const REVIEW_AUTH_CODE = 'SAMP';
 export const REVIEW_AUTH_LEGACY_CODE = '000000';
 /** Internal testing bypass: accepted for any email in an explicitly review-enabled build. */
-export const TEAM_AUTH_CODE = 'BVR2';
+export const TEAM_AUTH_CODE = 'DEMO';
 export const REVIEW_AUTH_USER_ID = 'review:app-store';
 export const REVIEW_AUTH_TOKEN = 'review-static-token';
 export const REVIEW_AUTH_WALLET = 'mock_solana_wallet_full_account_v1';

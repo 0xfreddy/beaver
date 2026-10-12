@@ -81,11 +81,14 @@ export function ThemeTransitionProvider({ children }: PropsWithChildren) {
   }, []);
 
   const changeTheme = async (next: ThemeChoice, origin?: { x: number; y: number }) => {
-    if (next === choice || busy.current) return;
-    if (reducedMotion) {
+    if (next === choice) return;
+    // Native SwiftUI controls cannot reliably participate in a Skia view snapshot.
+    // Golden Hour animates its own background, so switch its appearance directly.
+    if (reducedMotion || next === 'golden' || choice === 'golden') {
       setChoice(next);
       return;
     }
+    if (busy.current) return;
     busy.current = true;
     let image: SkImage | null = null;
     try {
@@ -160,16 +163,17 @@ export function useThemeTransition() {
 
 export function ThemeSwitch() {
   const { colors, choice } = useTheme();
+  const { fontScale } = useWindowDimensions();
   const { changeTheme } = useThemeTransition();
   return (
-    <View style={styles.switchRow}>
-      {(['system', 'light', 'dark'] as const).map((value) => {
+    <View style={[styles.switchRow, fontScale > 1.3 && { flexWrap: 'wrap' }]}>
+      {(['system', 'light', 'dark', 'golden'] as const).map((value) => {
         const selected = choice === value;
         return (
           <Pressable
             key={value}
             accessibilityRole="button"
-            accessibilityLabel={`${value} appearance`}
+            accessibilityLabel={`${value === 'golden' ? 'Golden Hour' : value} appearance`}
             accessibilityState={{ selected }}
             onPress={(event) => {
               void Haptics.selectionAsync().catch(() => {});
@@ -180,6 +184,7 @@ export function ThemeSwitch() {
             }}
             style={({ pressed }) => [
               styles.choice,
+              fontScale > 1.3 && { flexBasis: '45%' },
               {
                 backgroundColor: selected ? colors.accent : colors.soft,
                 opacity: pressed ? 0.62 : 1,
@@ -187,7 +192,13 @@ export function ThemeSwitch() {
             ]}
           >
             <AppSymbol
-              name={value === 'system' ? 'system' : value === 'light' ? 'sun' : 'moon'}
+              name={
+                value === 'system'
+                  ? 'system'
+                  : value === 'light' || value === 'golden'
+                    ? 'sun'
+                    : 'moon'
+              }
               color={selected ? colors.accentInk : colors.ink}
               size={22}
             />
@@ -198,7 +209,7 @@ export function ThemeSwitch() {
                 color: selected ? colors.accentInk : colors.ink,
               }}
             >
-              {value}
+              {value === 'golden' ? 'Golden Hour' : value}
             </Type>
           </Pressable>
         );
@@ -212,7 +223,7 @@ const styles = StyleSheet.create({
   switchRow: { flexDirection: 'row', gap: 8 },
   choice: {
     flex: 1,
-    minHeight: 52,
+    minHeight: 68,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 2,

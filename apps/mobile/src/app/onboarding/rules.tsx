@@ -3,5 +3,5 @@ import { useOnboardingFlow } from '../../lib/onboarding-flow';
 
 export default function Rules() {
   const flow = useOnboardingFlow();
-  return <RoundupRules onContinue={() => void flow.next('fallback')} />;
+  return <RoundupRules onContinue={() => void flow.next('explainer')} />;
 }

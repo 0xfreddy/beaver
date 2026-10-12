@@ -1,47 +1,63 @@
 import { useState } from 'react';
 import { Image, View, type ImageSourcePropType } from 'react-native';
+import { SvgUri } from 'react-native-svg';
 import { Type } from './ui';
 import { useTheme } from '../theme';
 import { bundledBankLogo } from '../lib/bank-logos';
+import { bankLogoSources } from '../lib/bank-presentation';
+import { useLogoDirectory } from '../lib/logo-directory';
 export function BankMark({
   name,
   uri,
   size = 44,
   fallbackLogo,
+  fallbackUri,
 }: {
   name: string;
   uri?: string | null;
   size?: number;
   fallbackLogo?: ImageSourcePropType;
+  fallbackUri?: string | null;
 }) {
   const { colors } = useTheme();
   const localLogo = fallbackLogo ?? bundledBankLogo(name);
-  const [failed, setFailed] = useState<string | null>(null);
+  const directory = useLogoDirectory();
+  const directoryUri = directory.data?.banks?.find(
+    (bank) => bank.name.trim().toLowerCase() === name.trim().toLowerCase(),
+  )?.uri;
+  const [failed, setFailed] = useState<string[]>([]);
+  const source = bankLogoSources(uri, fallbackUri, directoryUri).find(
+    (value) => !failed.includes(value),
+  );
+  const fail = () => {
+    if (source) setFailed((values) => [...values, source]);
+  };
   return (
     <View
       accessible={false}
       style={{
         width: size,
         height: size,
-        borderRadius: size / 2,
+        borderRadius: Math.min(12, size * 0.25),
+        borderCurve: 'continuous',
+        flexShrink: 0,
         overflow: 'hidden',
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: colors.soft,
+        backgroundColor: source || localLogo ? '#FFFFFF' : colors.soft,
       }}
     >
-      {uri && failed !== uri ? (
+      {localLogo ? (
+        <Image source={localLogo} resizeMode="contain" style={{ width: size, height: size }} />
+      ) : source && /\.svg(?:\?|$)/i.test(source) ? (
+        <SvgUri key={source} uri={source} width={size - 8} height={size - 8} onError={fail} />
+      ) : source ? (
         <Image
-          source={{ uri }}
+          key={source}
+          source={{ uri: source }}
           resizeMode="contain"
           style={{ width: size, height: size }}
-          onError={() => setFailed(uri)}
-        />
-      ) : localLogo ? (
-        <Image
-          source={localLogo}
-          resizeMode="contain"
-          style={{ width: size, height: size }}
+          onError={fail}
         />
       ) : (
         <Type style={{ fontSize: size * 0.35 }}>

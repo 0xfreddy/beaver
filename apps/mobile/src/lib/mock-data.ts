@@ -5,6 +5,9 @@ import {
   retentionActionSchema,
   everydayTargetSchema,
   retentionLessons,
+  retentionAchievements,
+  achievementDefinitions,
+  retiredRetentionAchievements,
 } from '@roundups/types';
 import type { CreatedInvite, PublicProfile } from '@roundups/types';
 import { isInternalAccessEnabled, isSyntheticUserId } from './internal-access';
@@ -79,6 +82,21 @@ export async function restoreMockData(ownerId: string) {
       await AsyncStorage.removeItem(storageKey(ownerId));
       return null;
     }
+    // Keep cached sample activity while updating the achievement catalog.
+    value.achievements.definitions = [
+      ...retentionAchievements,
+      ...[...achievementDefinitions, ...retiredRetentionAchievements]
+        .filter((definition) =>
+          value.achievements.awards.some((award) => award.definitionId === definition.id),
+        )
+        .map((definition) => ({ ...definition, group: 'Earlier achievements' })),
+    ];
+    value.achievements.awards = value.achievements.awards.map((award) => ({
+      ...award,
+      presentedAt: award.presentedAt === undefined ? award.earnedAt : award.presentedAt,
+    }));
+    const review = value.retention.actions.find((action) => action.id === 'return');
+    if (review) review.title = 'Review a completed roundup';
     // Upgrade only the display code; preserve sample activity and redemption counts.
     const invite = value.invites[0];
     if (invite && invite.code?.length !== 4) {
@@ -150,7 +168,12 @@ function overview(fixture: MockAccountFixture) {
     current.count += 1;
     grouped.set(key, current);
   }
-  return { purchaseCount: fixture.transactions.length, buckets: [...grouped.values()] };
+  return {
+    purchaseCount: fixture.transactions.filter(
+      (item) => item.reason !== 'not_a_purchase' && !item.removedAt,
+    ).length,
+    buckets: [...grouped.values()],
+  };
 }
 
 function activity(fixture: MockAccountFixture, url: URL) {
@@ -162,13 +185,27 @@ function activity(fixture: MockAccountFixture, url: URL) {
   const matches = fixture.transactions.filter((transaction) => {
     if (
       filter === 'roundups' &&
-      (transaction.roundupCents === null ||
+      (!transaction.roundupCents ||
+        transaction.roundupStatus === 'cancelled' ||
+        transaction.roundupStatus === 'preview' ||
         transaction.pending ||
         transaction.historicalPreview ||
         transaction.removedAt)
     )
       return false;
-    if (filter === 'excluded' && transaction.roundupCents !== null) return false;
+    if (
+      filter === 'purchases' &&
+      (transaction.reason === 'not_a_purchase' || transaction.removedAt)
+    )
+      return false;
+    if (
+      filter === 'excluded' &&
+      (transaction.pending ||
+        (!!transaction.roundupCents &&
+          !transaction.historicalPreview &&
+          !['cancelled', 'preview'].includes(transaction.roundupStatus ?? '')))
+    )
+      return false;
     if (!search) return true;
     return [transaction.merchant, transaction.symbol, transaction.currency]
       .filter(Boolean)
@@ -282,7 +319,9 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
           .filter((c) => c.status !== 'disconnected' && !c.disconnectRequested)
           .map((item) => ({
             ...item,
-            // 20h elapsed of a 24h cycle → the ruler fills 20 white and 4 gray lines.
+            provider: 'moneykit',
+            syncMode: 'scheduled',
+            nextExpectedAt: new Date(Date.now() + 4 * 3600000).toISOString(),
             lastSyncedAt: new Date(Date.now() - 20 * 3600000).toISOString(),
           })),
       },
@@ -486,7 +525,11 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
   if (method === 'GET' && pathname === '/v1/trading/orders')
     return { handled: true, data: { items: fixture.orders } };
   if (method === 'GET' && pathname === '/v1/trading/markets')
-    return { handled: true, data: { items: supportedMarketItems } };
+    // Explicit sample minimum; live minima always come from the instrument catalogue.
+    return {
+      handled: true,
+      data: { items: supportedMarketItems.map((item) => ({ ...item, minimumInputCents: 1000 })) },
+    };
   if (method === 'GET' && pathname === '/v1/funding')
     return {
       handled: true,
@@ -510,6 +553,34 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
     };
   if (method === 'GET' && pathname === '/v1/funding/receipts')
     return { handled: true, data: { items: fixture.depositReceipts } };
+  if (method === 'GET' && pathname === '/v1/roundups/monthly') {
+    const start = Date.parse(url.searchParams.get('start') ?? '');
+    const end = Date.parse(url.searchParams.get('end') ?? '');
+    const items = new Map<
+      string,
+      { symbol: string; investedCents: string; purchaseCount: number }
+    >();
+    for (const order of fixture.orders) {
+      const time = Date.parse(order.createdAt);
+      if (
+        order.side !== 'buy' ||
+        order.status !== 'finalized' ||
+        time < start ||
+        time >= end ||
+        !order.transactionIds.length
+      )
+        continue;
+      const item = items.get(order.symbol) ?? {
+        symbol: order.symbol,
+        investedCents: '0',
+        purchaseCount: 0,
+      };
+      item.investedCents = (BigInt(item.investedCents) + BigInt(order.reservedCents)).toString();
+      item.purchaseCount += new Set(order.transactionIds).size;
+      items.set(order.symbol, item);
+    }
+    return { handled: true, data: { items: [...items.values()] } };
+  }
   if (method === 'GET' && pathname === '/v1/transactions')
     if (fixture.scenario.expiredPaginationCursor && url.searchParams.has('cursor'))
       throw new Error('This sample activity page expired. Refresh to start again.');
@@ -542,6 +613,15 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
     return { handled: true, data: fixture.profile };
   if (method === 'GET' && pathname === '/v1/social/retention')
     return { handled: true, data: fixture.retention };
+  if (method === 'POST' && /^\/v1\/social\/achievements\/[^/]+\/presented$/.test(pathname)) {
+    await mutate((current) => {
+      const id = decodeURIComponent(pathname.split('/')[4]!);
+      const award = current.achievements.awards.find((a) => a.definitionId === id);
+      if (!award) throw new Error('Achievement not earned.');
+      award.presentedAt ??= new Date().toISOString();
+    });
+    return { handled: true, data: { recorded: true } };
+  }
   if (method === 'POST' && pathname === '/v1/social/retention/actions') {
     const action = retentionActionSchema.parse(body);
     const data = await mutate((current) => {
@@ -552,6 +632,7 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
             definitionId: id,
             criterionVersion: 1,
             earnedAt: new Date().toISOString(),
+            presentedAt: null,
           });
       };
       if (action.kind === 'recap') {
@@ -569,6 +650,17 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
           throw new Error('Have another look at the explanation and try again.');
         r.lessons = r.lessons.filter((l) => l.id !== action.sourceId);
         if (action.sourceId === 'roundup-basics') award('know-your-beaver');
+      } else if (action.kind === 'roundup') {
+        if (!r.reviews.some((review) => review.id === action.sourceId))
+          throw new Error('Roundup not found.');
+        r.reviews = r.reviews.filter((review) => review.id !== action.sourceId);
+        const reviewAction = r.actions.find((a) => a.id === 'return')!;
+        if (!reviewAction.completed) {
+          reviewAction.completed = true;
+          r.points += 20;
+          r.weeklyPoints += 20;
+        }
+        award('first-review');
       } else if (action.kind === 'rules') award('your-rules');
       current.achievements.points = r.points;
       for (const board of [current.globalLeaderboard, current.friendsLeaderboard]) {
@@ -599,6 +691,7 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
             definitionId,
             criterionVersion: 1,
             earnedAt: new Date().toISOString(),
+            presentedAt: null,
           });
       }
       return current.retention;
@@ -693,6 +786,7 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
       handled: true,
       data: {
         mode: 'historical_preview',
+        status: 'complete',
         provider,
         roundingIncrementCents: 100,
         roundupPercentage: 0,
@@ -808,6 +902,7 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
         deposits: true,
         trades: true,
         riskAlerts: true,
+        social: true,
       },
     };
   if (method === 'PUT' && pathname === '/v1/notification-preferences')
@@ -860,11 +955,15 @@ export async function mockApiRequest(path: string, options: RequestInit): Promis
         type: 'checking',
         mask: '0000',
         currency: 'USD',
-        enabled: false,
+        enabled: true,
       });
       return item;
     });
     return { handled: true, data: connection };
+  }
+  if (method === 'POST' && /^\/v1\/bank\/connections\/[^/]+\/refresh$/.test(pathname)) {
+    // Request acceptance must not manufacture a fresh bank timestamp, even in sample mode.
+    return { handled: true, data: { status: 'requested' } };
   }
   if (method === 'POST' && pathname === '/v1/bank/relink') {
     const connection = await mutate((current) => {

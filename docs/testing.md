@@ -21,9 +21,14 @@ Tests are colocated with source as `*.test.ts` and run under
   withdrawal/allocation helpers, and ticker search.
 - **`packages/types`** — contract schemas.
 
-Not covered yet: component/UI tests and end-to-end flows. UI changes are
-reviewed with recordings in the PR (see the PR template), and an E2E layer
-(Maestro against mock mode) is on the roadmap.
+- **Mobile components and providers** — selected rendering/state regressions,
+  onboarding, bank picker, notifications, achievements and wallet flows.
+- **Solana Mobile** — amount validation, deposit recovery/finality, message binding,
+  cancellation, changed wallet accounts and withdrawal-destination responses.
+
+Automated checks do not establish physical-device wallet behavior. Native
+back/sheet gestures, biometric prompts, wallet handoff and real finalized
+transfers require device acceptance. See [Solana Mobile](solana-mobile.md).
 
 ## Writing tests
 
@@ -31,8 +36,7 @@ reviewed with recordings in the PR (see the PR template), and an E2E layer
   was testing the wrong thing.
 - Say **why** the test exists — a one-line comment pinning the regression or
   invariant being guarded is worth more than a long assertion list.
-- Prefer pure functions and extractability over mocking frameworks. The
-  existing suites mock almost nothing.
+- Prefer pure functions and extractability over mocking frameworks. Mock native boundaries only where needed.
 - Keep runtime fast: the whole suite runs in seconds; keep it that way.
 
 CI (`pnpm check`) runs typecheck, lint, and the full suite on every pull

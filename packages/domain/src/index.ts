@@ -26,6 +26,21 @@ export function parseUsdCents(value: string): number {
   return value.startsWith('-') ? -cents : cents;
 }
 
+/** Compatibility display cents only; retain the source decimal for FX calculations. */
+export function decimalDisplayCents(value: string): number {
+  const match = /^(-?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(value);
+  if (!match) throw new RangeError('Expected a decimal amount');
+  const exponent = Number(match[4] ?? 0) - (match[3]?.length ?? 0) + 2;
+  if (Math.abs(exponent) > 100) throw new RangeError('Amount out of range');
+  const digits = BigInt(match[2]! + (match[3] ?? ''));
+  const scale = 10n ** BigInt(Math.abs(exponent));
+  const rounded = exponent >= 0 ? digits * scale : (digits + scale / 2n) / scale;
+  const cents = Number(rounded) * (match[1] ? -1 : 1);
+  if (!Number.isSafeInteger(cents) || Math.abs(cents) > 2147483647)
+    throw new RangeError('Amount out of range');
+  return cents;
+}
+
 export function formatUsd(cents: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 }
@@ -201,4 +216,13 @@ export function ruleRoundupCents(purchaseCents: number, rule: RoundupRule) {
     ? Number((BigInt(purchaseCents) * BigInt(rule.percentage) + 50n) / 100n)
     : (rule.incrementCents - (purchaseCents % rule.incrementCents)) % rule.incrementCents;
   return Math.min(calculated, rule.maxRoundupCents);
+}
+
+/** Display-only decimal rounding, without converting money through floating point. */
+export function notificationAmount(value: string): string {
+  if (!/^\d+(\.\d+)?$/.test(value)) return value;
+  const [whole, fraction = ''] = value.split('.');
+  const digits = fraction.padEnd(3, '0');
+  const cents = BigInt(whole!) * 100n + BigInt(digits.slice(0, 2)) + (digits[2]! >= '5' ? 1n : 0n);
+  return `${cents / 100n}.${String(cents % 100n).padStart(2, '0')}`;
 }

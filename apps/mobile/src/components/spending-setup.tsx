@@ -1,7 +1,16 @@
 import { useInstitutionDirectory } from '../lib/institution-directory';
 import { BankControls } from './bank-controls';
-import { useCallback, useRef, useState, type ReactNode } from 'react';
-import { AccessibilityInfo, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  AccessibilityInfo,
+  Alert,
+  BackHandler,
+  Keyboard,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -23,14 +32,15 @@ import { OnboardingAnimation } from './onboarding-animation';
 import { OnchainTransactionPreview } from './onchain-transaction-preview';
 import { createCryptoCard, fetchOnchainSpendingPreview } from '../lib/api';
 import { cryptoCardProviders, type CryptoCardProvider } from '../lib/crypto-card-providers';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../providers/auth-provider';
 import { useOnchainPreview } from '../providers/onchain-preview-provider';
 import { useTheme } from '../theme';
-import { CircularBankList } from './reacticx/circular-bank-list';
+import { BankDiscovery } from './bank-discovery';
 import { ProviderSegmentedControl } from './provider-segmented-control';
 import { CryptoCardGuideTray } from './crypto-card-guide-tray';
+import { posthog } from '../lib/telemetry';
 
 const evmAddress = /^0x[a-fA-F0-9]{40}$/;
 
@@ -65,8 +75,8 @@ export function SpendingSetup({
   initialStage = 'bank',
   onContinue,
 }: {
-  initialStage?: 'bank' | 'address';
-  onContinue?: (step: 'enter-app' | 'manual') => Promise<void>;
+  initialStage?: 'bank' | 'address' | 'connect';
+  onContinue?: (step: 'rules' | 'manual') => Promise<void>;
 }) {
   const { colors } = useTheme();
   const auth = useAuth();
@@ -82,6 +92,12 @@ export function SpendingSetup({
     animated: boolean;
   }>({ stage: initialStage, direction: 'forward', animated: false });
   const { stage } = stageState;
+  useEffect(() => {
+    if (initialStage === 'connect')
+      setStageState({ stage: 'connect', direction: 'forward', animated: false });
+  }, [initialStage]);
+  const [bankProgress, setBankProgress] = useState({ connected: 0, syncing: 0 });
+  const [bankStatusActive, setBankStatusActive] = useState(false);
 
   function goStage(next: Stage) {
     setStageState((current) => ({
@@ -105,6 +121,34 @@ export function SpendingSetup({
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scanId = useRef(0);
+  // Leaving this step invalidates in-flight reads; a late result must not
+  // repopulate a new attempt after the user has gone back.
+  const leaveAddress = useCallback(() => {
+    if (busy) return;
+    scanId.current += 1;
+    setScanning(false);
+    setPreview(null);
+    setError(null);
+    Keyboard.dismiss();
+    if (initialStage === 'address') router.back();
+    else setStageState({ stage: 'bank', direction: 'back', animated: true });
+  }, [busy, initialStage]);
+  useFocusEffect(
+    useCallback(() => {
+      if (stage !== 'address') return;
+      const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+        leaveAddress();
+        return true;
+      });
+      return () => subscription.remove();
+    }, [leaveAddress, stage]),
+  );
+  useEffect(
+    () => () => {
+      scanId.current += 1;
+    },
+    [],
+  );
   const addressShake = useSharedValue(0);
   const reducedMotion = useReducedMotion();
   const addressShakeStyle = useAnimatedStyle(() => ({
@@ -112,7 +156,7 @@ export function SpendingSetup({
   }));
 
   function rejectAddress(message: string) {
-    setError(null);
+    setError(message);
     void AccessibilityInfo.announceForAccessibility(message);
     void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
     if (reducedMotion) return;
@@ -146,7 +190,7 @@ export function SpendingSetup({
       }
       if (onContinue) {
         saveOnboardingPreview(preview);
-        await onContinue('enter-app');
+        await onContinue('rules');
       } else router.back();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Couldn’t save your card. Try again.');
@@ -180,7 +224,14 @@ export function SpendingSetup({
         [value],
         provider === 'Tuyo' ? 'tuyo' : 'etherfi',
       );
-      if (currentScan === scanId.current) setPreview(result);
+      if (currentScan === scanId.current) {
+        setPreview(result);
+        posthog?.capture('historical_preview_viewed', {
+          provider: provider === 'Tuyo' ? 'tuyo' : 'etherfi',
+          transaction_count: result.transactions.length,
+          address_count: result.addresses.length,
+        });
+      }
     } catch (scanError) {
       if (currentScan === scanId.current)
         setError(scanError instanceof Error ? scanError.message : 'We couldn’t read that address.');
@@ -214,9 +265,9 @@ export function SpendingSetup({
     return (
       <StageShell {...stageState}>
         <SetupPage
+          includeTopSafeArea={!!onContinue}
           title={'Connect your\nspending'}
           contentStyle={{ flexGrow: 1 }}
-          description="Beaver only reads purchase data to calculate your roundup."
           actions={
             <>
               <Type muted style={{ textAlign: 'center', marginBottom: 8 }}>
@@ -234,7 +285,7 @@ export function SpendingSetup({
           <View style={{ flex: 1, justifyContent: 'center', minHeight: 240 }}>
             {/* Renders immediately from the bundled popular-bank catalogue;
                 remote provider logos upgrade in when the directory resolves. */}
-            <CircularBankList banks={directory.data?.items ?? []} />
+            <BankDiscovery banks={directory.data?.items ?? []} />
           </View>
         </SetupPage>
       </StageShell>
@@ -244,6 +295,7 @@ export function SpendingSetup({
     return (
       <StageShell {...stageState}>
         <SetupPage
+          includeTopSafeArea={!!onContinue}
           title={'Your data stays\nprivate. Always.'}
           description={
             <View style={{ gap: 16 }}>
@@ -273,29 +325,63 @@ export function SpendingSetup({
     return (
       <StageShell {...stageState}>
         <SetupPage
-          title="Your banks"
+          animateTitle={false}
+          topPadding={24}
+          title={bankProgress.connected ? 'Your banks' : 'Connect your bank'}
+          contentStyle={bankStatusActive ? { flexGrow: 1 } : undefined}
+          includeTopSafeArea={!!onContinue}
           actions={
-            <>
-              <Type muted style={{ textAlign: 'center', marginBottom: 8 }}>
-                Your data stays private. Always.
-              </Type>
-              <Button
-                appearance="onboarding"
-                title="Connect another bank"
-                loading={busy}
-                onPress={() => setLinkRequest((value) => value + 1)}
-              />
-              <TextButton title="Connect crypto card" onPress={() => goStage('address')} />
-              <TextButton title={onContinue ? 'Skip' : 'Done'} onPress={() => void finish()} />
-            </>
+            bankStatusActive ? null : (
+              <>
+                {bankProgress.connected > 0 ? (
+                  <OnboardingAnimation name="bank-bridge-builder" height={80} loop={false} />
+                ) : null}
+                <Button
+                  appearance="onboarding"
+                  title={
+                    bankProgress.connected ? (onContinue ? 'Continue' : 'Done') : 'Connect bank'
+                  }
+                  loading={busy}
+                  onPress={() =>
+                    bankProgress.connected ? void finish() : setLinkRequest((value) => value + 1)
+                  }
+                />
+                <View style={{ gap: 4 }}>
+                  {bankProgress.connected > 0 ? (
+                    <TextButton
+                      title="Connect another bank"
+                      disabled={busy}
+                      onPress={() => setLinkRequest((value) => value + 1)}
+                    />
+                  ) : null}
+                  {!bankProgress.connected ? (
+                    <TextButton
+                      title="Connect crypto card"
+                      disabled={busy}
+                      onPress={() => goStage('address')}
+                    />
+                  ) : null}
+                </View>
+                <TextButton title="Back" disabled={busy} onPress={() => goStage('bank')} />
+              </>
+            )
           }
         >
           <BankControls
             onboarding
             linkRequest={linkRequest}
             onBusyChange={setBusy}
+            onProgressChange={setBankProgress}
+            onStatusActiveChange={setBankStatusActive}
             onCancel={() => goStage('bank')}
           />
+          {bankProgress.connected > 0 && !bankStatusActive ? (
+            <Type muted>
+              All your connected bank accounts and crypto cards contribute to roundups
+              automatically.
+            </Type>
+          ) : null}
+          {error ? <Type accessibilityRole="alert">{error}</Type> : null}
         </SetupPage>
       </StageShell>
     );
@@ -329,6 +415,7 @@ export function SpendingSetup({
                   onPress={() => void onContinue('manual')}
                 />
               ) : null}
+              <TextButton title="Back" disabled={busy} onPress={leaveAddress} />
             </>
           }
         >
@@ -345,19 +432,21 @@ export function SpendingSetup({
                 addressShakeStyle,
               ]}
             >
-              <Type
-                accessibilityLabel={
-                  address
-                    ? `${provider} public address ${address}`
-                    : 'No crypto card address pasted'
-                }
-                selectable={!!address}
-                muted={!address}
-                numberOfLines={2}
-                style={styles.addressText}
-              >
-                {address || 'Copy your card 0x address'}
-              </Type>
+              <TextInput
+                accessibilityLabel={`${provider} public address`}
+                value={address}
+                onChangeText={(value) => {
+                  setAddress(value);
+                  setPreview(null);
+                  setError(null);
+                }}
+                editable={!busy && !scanning}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Your card 0x address"
+                placeholderTextColor={colors.muted}
+                style={[styles.addressText, { color: colors.ink }]}
+              />
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Paste crypto card address"
@@ -398,7 +487,11 @@ export function SpendingSetup({
               {error}
             </Type>
           ) : null}
-          <OnchainTransactionPreview loading={scanning} transactions={preview?.transactions} />
+          <OnchainTransactionPreview
+            loading={scanning}
+            processing={preview?.status === 'processing'}
+            transactions={preview?.transactions}
+          />
         </SetupPage>
         <CryptoCardGuideTray
           visible={guideTrayOpen}

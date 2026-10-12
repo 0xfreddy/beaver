@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-const navigation = vi.hoisted(() => ({ push: vi.fn(), dismissTo: vi.fn() }));
+const navigation = vi.hoisted(() => ({
+  push: vi.fn(),
+  dismissTo: vi.fn(),
+  back: vi.fn(),
+  replace: vi.fn(),
+  canGoBack: vi.fn(() => true),
+}));
 vi.mock('expo-router', () => ({ router: navigation }));
 import {
   openSaltEdgeLink,
@@ -35,12 +41,43 @@ describe('Salt Edge native handoff', () => {
     await expect(continueSaltEdgeLink('roundups-development://saltedge/unrelated')).resolves.toBe(
       false,
     );
-    await expect(openSaltEdgeLink('https://connect.saltedge.com/two', callback)).rejects.toThrow(
-      'already in progress',
-    );
     await expect(continueSaltEdgeLink(callback)).resolves.toBe(true);
     expect(await pending).toBe('');
     expect(navigation.dismissTo).toHaveBeenCalledWith('/settings/banks');
     await expect(continueSaltEdgeLink(callback)).resolves.toBe(false);
+  });
+  it('returns an OAuth callback to the same picker session', async () => {
+    const target = '/bank-picker?pickerId=42';
+    const pending = openSaltEdgeLink('https://connect.saltedge.com/one', callback, target);
+    expect(await continueSaltEdgeLink(callback)).toBe(true);
+    expect(await pending).toBe('');
+    expect(navigation.dismissTo).toHaveBeenCalledWith(target);
+  });
+  it('supersedes a stale session instead of locking the flow', async () => {
+    const stale = openSaltEdgeLink('https://connect.saltedge.com/one', callback);
+    const fresh = openSaltEdgeLink('https://connect.saltedge.com/two', callback);
+    expect(await stale).toBeNull();
+    resolveSaltEdge('', sessionId());
+    expect(await fresh).toBe('');
+  });
+  it('falls back to a plain pop when the opening screen left the stack', async () => {
+    navigation.dismissTo.mockImplementationOnce(() => {
+      throw new Error('target not in stack');
+    });
+    const pending = openSaltEdgeLink('https://connect.saltedge.com/one', callback);
+    await expect(continueSaltEdgeLink(callback)).resolves.toBe(true);
+    expect(navigation.back).toHaveBeenCalled();
+    expect(await pending).toBe('');
+  });
+  it('falls back to the app root when there is nothing to pop after a relaunch', async () => {
+    navigation.dismissTo.mockImplementationOnce(() => {
+      throw new Error('target not in stack');
+    });
+    navigation.canGoBack.mockReturnValueOnce(false);
+    const pending = openSaltEdgeLink('https://connect.saltedge.com/one', callback);
+    await expect(continueSaltEdgeLink(callback)).resolves.toBe(true);
+    expect(navigation.back).not.toHaveBeenCalled();
+    expect(navigation.replace).toHaveBeenCalledWith('/');
+    expect(await pending).toBe('');
   });
 });

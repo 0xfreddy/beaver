@@ -26,7 +26,14 @@ function offerKey(userId: string) {
   return accountKey(offerKeyPrefix, userId);
 }
 
+export const biometricSettingsLabel = Platform.OS === 'ios' ? 'Face ID' : 'Biometric unlock';
+
 function labelFor(types: LocalAuthentication.AuthenticationType[]) {
+  if (Platform.OS !== 'ios') {
+    if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Fingerprint';
+    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face unlock';
+    return 'biometrics';
+  }
   if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION)) return 'Face ID';
   if (types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Touch ID';
   if (Platform.OS === 'ios') return 'Face ID';

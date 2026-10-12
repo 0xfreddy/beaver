@@ -210,7 +210,7 @@ describe('sample account safety boundary', () => {
     vi.stubGlobal('fetch', fetchMock);
     await loadCanonicalMockData('user_a', new Date('2026-09-13T12:00:00Z'));
     const overview = await apiRequest(async () => 'live-token', '/v1/overview');
-    expect(overview).toMatchObject({ purchaseCount: 75 });
+    expect(overview).toMatchObject({ purchaseCount: 74 });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -219,7 +219,7 @@ describe('sample account safety boundary', () => {
     vi.stubGlobal('fetch', fetchMock);
     const result = await apiRequest(async () => 'team-token', '/v1/social/invites/accept', {
       method: 'POST',
-      body: JSON.stringify({ token: 'BVR2' }),
+      body: JSON.stringify({ token: 'DEMO' }),
     });
     expect(result).toMatchObject({ status: 'already-friends' });
     expect(fetchMock).not.toHaveBeenCalled();

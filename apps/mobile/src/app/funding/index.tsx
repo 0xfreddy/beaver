@@ -29,6 +29,7 @@ import { OnboardingAnimation } from '../../components/onboarding-animation';
 import { AssetMark } from '../../components/asset-mark';
 import { useMockData } from '../../providers/mock-data-provider';
 import { posthog } from '../../lib/telemetry';
+import { MobileWalletDeposit } from '../../components/mobile-wallet-deposit';
 
 const chainStyle: Record<string, { seconds: number }> = {
   Solana: { seconds: 30 },
@@ -215,7 +216,11 @@ function FundingAccount() {
                           year: 'numeric',
                           timeZone: 'UTC',
                         });
-                    const amountLabel = formatDepositAmount(receipt.amountRaw, receipt.asset ?? 'USDC', 6);
+                    const amountLabel = formatDepositAmount(
+                      receipt.amountRaw,
+                      receipt.asset ?? 'USDC',
+                      6,
+                    );
                     return (
                       <View
                         key={receipt.id ?? receipt.signature ?? amountLabel + dateLabel}
@@ -301,6 +306,14 @@ function FundingAccount() {
         ) : null}
         {activeInstruction ? (
           <>
+            <MobileWalletDeposit
+              instruction={activeInstruction}
+              option={selected}
+              onConfirmed={() => {
+                void balances.refetch();
+                void receipts.refetch();
+              }}
+            />
             {received ? (
               <View
                 accessibilityRole="alert"

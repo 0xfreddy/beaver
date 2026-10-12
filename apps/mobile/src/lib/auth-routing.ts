@@ -24,9 +24,14 @@ export function onboardingRedirect(
 ): '/onboarding/account' | '/onboarding/invite-code' | '/' | null {
   if (sessionCompletionPending) return null;
   const inOnboarding = pathname.startsWith('/onboarding');
-  const bankLinkRoute = ['/moneykit/callback', '/saltedge/link', '/saltedge/callback'].includes(
-    pathname,
-  );
+  if (inOnboarding && pathname !== '/onboarding/account' && !authenticated)
+    return '/onboarding/account';
+  const bankLinkRoute = [
+    '/bank-picker',
+    '/moneykit/callback',
+    '/saltedge/link',
+    '/saltedge/callback',
+  ].includes(pathname);
   if (authenticated && bankLinkRoute) return null;
   if (authenticated && needsOnboarding && pathname === '/onboarding/account')
     return '/onboarding/invite-code';

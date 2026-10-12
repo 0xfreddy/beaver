@@ -5,10 +5,14 @@ vi.mock('expo-constants', () => ({
 import {
   ApiError,
   apiRequest,
+  cancelRoundup,
+  createCryptoCard,
+  fetchOnchainSpendingPreview,
   fetchSession,
   isApiUrlAllowed,
   sessionRetryDelay,
   shouldRetrySession,
+  timeoutSignal,
 } from './api';
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -36,6 +40,20 @@ describe('authenticated frontend API client', () => {
       'Idempotency-Key': 'same-sale-key',
     });
     expect(fetchMock.mock.calls[1]?.[1].headers.Authorization).toBe('Bearer second');
+  });
+  it('cancels a roundup through its purchase-scoped endpoint', async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ id: 'roundup-id', status: 'cancelled' }), { status: 200 }),
+    );
+
+    await expect(cancelRoundup(async () => 'token', 'purchase/id')).resolves.toEqual({
+      id: 'roundup-id',
+      status: 'cancelled',
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://test.roundups.invalid/v1/transactions/purchase%2Fid/roundup/cancel',
+      expect.objectContaining({ method: 'POST' }),
+    );
   });
   it('never sends an unauthenticated or already cancelled request', async () => {
     await expect(apiRequest(async () => null, '/v1/overview')).rejects.toMatchObject({
@@ -120,4 +138,89 @@ it('turns native transport failures into a useful connection message', async () 
     code: 'NETWORK_ERROR',
     message: 'Couldn’t connect. Check your connection and try again.',
   });
+});
+
+describe('bank connection error copy', () => {
+  it.each([
+    ['BANK_CONNECTION_NOT_COMPLETED', 'did not finish connecting'],
+    ['BANK_ALREADY_LINKED', 'already connected'],
+    ['SALTEDGE_RATE_LIMITED', 'busy right now'],
+    ['LINK_SESSION_NOT_FOUND', 'no longer valid'],
+  ])('maps %s to actionable copy, not a raw code', async (code, fragment) => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code } }), { status: 422 }),
+    );
+    const failure = apiRequest(async () => 'token', '/v1/bank/exchange', {
+      method: 'POST',
+      body: '{}',
+    });
+    await expect(failure).rejects.toBeInstanceOf(ApiError);
+    await failure.catch((error: ApiError) => {
+      expect(error.message).toContain(fragment);
+      expect(error.message).not.toContain(code);
+    });
+  });
+});
+
+describe('request timeouts', () => {
+  it.each(['preview', 'save'] as const)(
+    'bounds the crypto-card %s request when the network stalls',
+    async (operation) => {
+      vi.useFakeTimers();
+      try {
+        fetchMock.mockImplementation(
+          (_url, init: RequestInit) =>
+            new Promise((_resolve, reject) => {
+              init.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+            }),
+        );
+        let failure: unknown;
+        const address = `0x${'1'.repeat(40)}`;
+        const request =
+          operation === 'preview'
+            ? fetchOnchainSpendingPreview(async () => 'token', [address])
+            : createCryptoCard(async () => 'token', 'etherfi', address);
+        void request.catch((error) => {
+          failure = error;
+        });
+        await vi.advanceTimersByTimeAsync(30_001);
+        expect(failure).toMatchObject({ code: 'REQUEST_TIMEOUT' });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+  it('reports a timed-out request instead of hanging forever', async () => {
+    const signal = timeoutSignal(5);
+    fetchMock.mockImplementation(
+      (_url, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+        }),
+    );
+    await expect(
+      apiRequest(async () => 'token', '/v1/bank/exchange', { method: 'POST', signal }),
+    ).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT', status: 504 });
+  });
+
+  it('still propagates caller-initiated cancellation untouched', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      apiRequest(async () => 'token', '/v1/overview', { signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+it('releases session startup when the auth token provider never resolves', async () => {
+  vi.useFakeTimers();
+  try {
+    const pending = fetchSession(() => new Promise(() => {}));
+    const result = expect(pending).rejects.toMatchObject({ code: 'REQUEST_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(15_000);
+    await result;
+    expect(fetchMock).not.toHaveBeenCalled();
+  } finally {
+    vi.useRealTimers();
+  }
 });

@@ -25,6 +25,7 @@ export function SetupPage({
   titleStyle,
   titleDelay,
   includeTopSafeArea = true,
+  animateTitle = true,
 }: PropsWithChildren<{
   title: string;
   description?: ReactNode;
@@ -38,6 +39,8 @@ export function SetupPage({
   titleDelay?: number;
   /** Full-screen setup pages need the status-bar inset; native sheets already provide it. */
   includeTopSafeArea?: boolean;
+  /** Status titles update in place; narrative onboarding can retain its word reveal. */
+  animateTitle?: boolean;
 }>) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -64,6 +67,7 @@ export function SetupPage({
       style={{ flex: 1, backgroundColor: colors.background }}
     >
       <ScrollView
+        nestedScrollEnabled
         style={{ flex: 1, backgroundColor: colors.background }}
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustKeyboardInsets={false}
@@ -82,15 +86,21 @@ export function SetupPage({
         {artwork ? <View style={{ marginBottom: 24 }}>{artwork}</View> : null}
         {title || description ? (
           <View style={{ gap: 20, marginBottom: 28 }}>
-            <FadeText
-              text={title}
-              centered={!!artwork}
-              startDelay={titleDelay}
-              style={[
-                artwork ? { fontSize: 28, lineHeight: 34, textAlign: 'center' } : undefined,
-                titleStyle,
-              ]}
-            />
+            {animateTitle ? (
+              <FadeText
+                text={title}
+                centered={!!artwork}
+                startDelay={titleDelay}
+                style={[
+                  artwork ? { fontSize: 28, lineHeight: 34, textAlign: 'center' } : undefined,
+                  titleStyle,
+                ]}
+              />
+            ) : (
+              <Type variant="story" accessibilityRole="header" style={titleStyle}>
+                {title}
+              </Type>
+            )}
             {description ? (
               typeof description === 'string' ? (
                 <Type
@@ -106,9 +116,9 @@ export function SetupPage({
           </View>
         ) : null}
         <View style={[{ gap: 24 }, contentStyle]}>{children}</View>
-        {fontScale > 1.3 ? actionsView : null}
+        {actions && fontScale > 1.3 ? actionsView : null}
       </ScrollView>
-      {fontScale <= 1.3 ? actionsView : null}
+      {actions && fontScale <= 1.3 ? actionsView : null}
     </KeyboardAvoidingView>
   );
 }

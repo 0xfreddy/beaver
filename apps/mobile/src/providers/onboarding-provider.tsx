@@ -1,8 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import type { PropsWithChildren } from 'react';
 import { useAuth } from './auth-provider';
-import { apiRequest } from '../lib/api';
+import { apiRequest, timeoutSignal } from '../lib/api';
 
 import {
   accountStoragePrefix,
@@ -14,6 +14,8 @@ const defaultSpendingProfile: SpendingProfile = { monthlySpend: 500, transaction
 type AccountOnboarding = { completed: boolean; spendingProfile: SpendingProfile };
 const Context = createContext<{
   ready: boolean;
+  resumePath: string | null;
+  rememberPath: (path: string) => void;
   completedUserIds: readonly string[];
   spendingProfile: SpendingProfile;
   complete: () => Promise<void>;
@@ -47,23 +49,36 @@ function parseSpendingProfile(value: string | null): SpendingProfile {
 /** Account-scoped presentation state only. This never activates an account or trading. */
 export function OnboardingProvider({ children }: PropsWithChildren) {
   const auth = useAuth();
+  const [resumePath, setResumePath] = useState<string | null>(null);
   const [loadedUserId, setLoadedUserId] = useState<string | null | undefined>(undefined);
   const [accounts, setAccounts] = useState<Record<string, AccountOnboarding>>({});
   const userId = auth.user?.id ?? null;
+  const owner = useRef(userId);
+  owner.current = userId;
 
   useEffect(() => {
     if (!auth.isReady) return;
     if (!userId) {
       setLoadedUserId(null);
+      setResumePath(null);
       setAccounts({});
       return;
     }
     let active = true;
     const introductionKey = accountKey(accountStoragePrefix, userId);
     const spendingKey = accountKey(accountSpendingStoragePrefix, userId);
-    void Promise.all([AsyncStorage.getItem(introductionKey), AsyncStorage.getItem(spendingKey)])
-      .then(([introduction, spending]) => {
+    void Promise.all([
+      AsyncStorage.getItem(introductionKey),
+      AsyncStorage.getItem(spendingKey),
+      AsyncStorage.getItem(`beaver.onboarding-route:${userId}`),
+    ])
+      .then(([introduction, spending, savedPath]) => {
         if (!active) return;
+        setResumePath(
+          savedPath?.startsWith('/onboarding/') && savedPath !== '/onboarding/account'
+            ? savedPath
+            : null,
+        );
         const completed = introduction === 'seen';
         const spendingProfile = parseSpendingProfile(spending);
         setAccounts((current) => ({ ...current, [userId]: { completed, spendingProfile } }));
@@ -88,26 +103,35 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
     [accounts, ready],
   );
 
+  function rememberPath(path: string) {
+    if (!userId || !path.startsWith('/onboarding/') || path === '/onboarding/account') return;
+    setResumePath(path);
+    void AsyncStorage.setItem(`beaver.onboarding-route:${userId}`, path).catch(() => {});
+  }
   async function complete() {
     if (!userId) throw new Error('Sign in before completing onboarding.');
     // Storage failure must not trap someone in an introduction.
     await AsyncStorage.setItem(accountKey(accountStoragePrefix, userId), 'seen').catch(() => {});
-    // Server-side completion survives reinstalls and new devices; best-effort so
-    // finishing offline still enters the app (the next session syncs it up).
-    await apiRequest(auth.getAccessToken, '/v1/onboarding/complete', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    })
-      .then(() => auth.refreshSession().catch(() => {}))
-      .catch(() => {});
+    if (owner.current !== userId) throw new Error('Your account changed. Please sign in again.');
     setAccounts((accounts) => ({
       ...accounts,
       [userId]: { completed: true, spendingProfile },
     }));
+    // This only records a completed introduction. A slow or offline server must
+    // not hold navigation hostage; no investing/funding state is inferred here.
+    void apiRequest(auth.getAccessToken, '/v1/onboarding/complete', {
+      method: 'POST',
+      signal: timeoutSignal(10_000),
+      body: JSON.stringify({}),
+    })
+      .then(() => (owner.current === userId ? auth.refreshSession() : undefined))
+      .catch(() => {});
   }
   async function reset() {
     if (!userId) return;
+    setResumePath(null);
     await Promise.all([
+      AsyncStorage.removeItem(`beaver.onboarding-route:${userId}`),
       AsyncStorage.removeItem(accountKey(accountStoragePrefix, userId)),
       AsyncStorage.removeItem(accountKey(accountSpendingStoragePrefix, userId)),
     ]).catch(() => {});
@@ -129,7 +153,16 @@ export function OnboardingProvider({ children }: PropsWithChildren) {
   }
   return (
     <Context.Provider
-      value={{ ready, completedUserIds, spendingProfile, complete, reset, saveSpendingProfile }}
+      value={{
+        ready,
+        resumePath,
+        rememberPath,
+        completedUserIds,
+        spendingProfile,
+        complete,
+        reset,
+        saveSpendingProfile,
+      }}
     >
       {children}
     </Context.Provider>

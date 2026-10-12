@@ -1,12 +1,12 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppSymbol } from '../../components/app-symbol';
 import { OnboardingAnimation } from '../../components/onboarding-animation';
 import { DiaText } from '../../components/reacticx/dia-text';
 import { RadiantButton } from '../../components/reacticx/radiant-button';
-import { Type } from '../../components/ui';
+import { Button, Type } from '../../components/ui';
 import { useOnboardingFlow } from '../../lib/onboarding-flow';
 import { posthog } from '../../lib/telemetry';
 import { useTheme } from '../../theme';
@@ -16,15 +16,18 @@ export default function EnterApp() {
   const insets = useSafeAreaInsets();
   const flow = useOnboardingFlow();
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [replayKey, setReplayKey] = useState(0);
 
   async function enter() {
     if (busy) return;
     setBusy(true);
+    setError(null);
     try {
       await flow.finish();
       posthog?.capture('onboarding_completed');
-    } catch {
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Couldn’t open Beaver. Please try again.');
       // Unlock the button so a transient failure can be retried.
       setBusy(false);
     }
@@ -88,29 +91,39 @@ export default function EnterApp() {
         <Type muted style={styles.detail}>
           Your Beaver is ready.
         </Type>
+        {error ? <Type accessibilityRole="alert">{error}</Type> : null}
       </View>
-      <RadiantButton
-        accessibilityLabel={busy ? 'Opening Beaver' : 'Enter Beaver'}
-        disabled={busy}
-        onPress={() => void enter()}
-        style={styles.radiantButton}
-        theme={{
-          background: '#FFFFFF',
-          backgroundSubtle: '#FFD9B8',
-          foreground: '#111111',
-          highlight: '#FF5A1F',
-        }}
-        dotOpacity={0.9}
-        glowWidth={0.9}
-        glowBlur={26}
-        glowBandWidth={0.24}
-        shimmerOpacity={0.9}
-      >
-        <View style={styles.buttonContent}>
-          <Type style={styles.buttonLabel}>{busy ? 'Opening Beaver…' : 'Enter Beaver'}</Type>
-          <AppSymbol name="next" color="#111111" size={18} />
-        </View>
-      </RadiantButton>
+      {Platform.OS === 'android' ? (
+        <Button
+          appearance="onboarding"
+          title={busy ? 'Opening Beaver…' : 'Enter Beaver'}
+          disabled={busy}
+          onPress={() => void enter()}
+        />
+      ) : (
+        <RadiantButton
+          accessibilityLabel={busy ? 'Opening Beaver' : 'Enter Beaver'}
+          disabled={busy}
+          onPress={() => void enter()}
+          style={styles.radiantButton}
+          theme={{
+            background: '#FFFFFF',
+            backgroundSubtle: '#FFD9B8',
+            foreground: '#111111',
+            highlight: '#FF5A1F',
+          }}
+          dotOpacity={0.9}
+          glowWidth={0.9}
+          glowBlur={26}
+          glowBandWidth={0.24}
+          shimmerOpacity={0.9}
+        >
+          <View style={styles.buttonContent}>
+            <Type style={styles.buttonLabel}>{busy ? 'Opening Beaver…' : 'Enter Beaver'}</Type>
+            <AppSymbol name="next" color="#111111" size={18} />
+          </View>
+        </RadiantButton>
+      )}
     </View>
   );
 }

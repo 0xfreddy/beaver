@@ -82,7 +82,7 @@ export function ReviewReceiptCard({ data }: { data: ReviewReceiptData }) {
         {data.category ? <Text style={styles.category}>{data.category}</Text> : null}
         <Rule />
         <Row label="Date" value={dateLabel} />
-        <Row label="Payment Method" value={data.paymentMethod ?? '—'} />
+        {data.paymentMethod ? <Row label="Payment Method" value={data.paymentMethod} /> : null}
         {items.length ? (
           <>
             <Rule />

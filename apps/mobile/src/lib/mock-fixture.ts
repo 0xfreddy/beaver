@@ -290,23 +290,26 @@ function manualTransactions(anchor: Date): Purchase[] {
     ['02', 'Trader Joe’s', 725, 'AMZN', 'redeemed', 3, 18, 40],
     ['03', 'IKEA', 3_110, 'SBUX', 'preview', 6, 11, 20],
   ] as const;
-  return rows.map(([suffix, merchant, amountCents, symbol, roundupStatus, day, hour, minute]) => ({
-    id: `${MANUAL_TX_PREFIX}${suffix}`,
-    amountCents,
-    currency: 'USD',
-    merchant,
-    occurredAt: localDay(anchor, day, hour, minute),
-    pending: false,
-    removedAt: null,
-    reason: null,
-    historicalPreview: false,
-    roundupCents: (100 - (amountCents % 100)) % 100,
-    symbol,
-    roundupStatus,
-    eligibilityStatus: 'eligible',
-    confirmedSymbol: symbol,
-    mappingMethod: 'user',
-  }) satisfies Purchase);
+  return rows.map(
+    ([suffix, merchant, amountCents, symbol, roundupStatus, day, hour, minute]) =>
+      ({
+        id: `${MANUAL_TX_PREFIX}${suffix}`,
+        amountCents,
+        currency: 'USD',
+        merchant,
+        occurredAt: localDay(anchor, day, hour, minute),
+        pending: false,
+        removedAt: null,
+        reason: null,
+        historicalPreview: false,
+        roundupCents: (100 - (amountCents % 100)) % 100,
+        symbol,
+        roundupStatus,
+        eligibilityStatus: 'eligible',
+        confirmedSymbol: symbol,
+        mappingMethod: 'user',
+      }) satisfies Purchase,
+  );
 }
 
 // Tiny placeholder photo shared by the sample receipts (a drawn receipt outline).
@@ -346,7 +349,8 @@ function manualReceipts(anchor: Date): MockManualReceipt[] {
   ];
 }
 
-function providerPendingTransactions(anchor: Date): Purchase[] {  return ['Starbucks', 'Amazon', 'Uber', 'Apple', 'Whole Foods'].map(
+function providerPendingTransactions(anchor: Date): Purchase[] {
+  return ['Starbucks', 'Amazon', 'Uber', 'Apple', 'Whole Foods'].map(
     (merchant, index) =>
       ({
         id: `mock_tx_pending_${String(index + 1).padStart(2, '0')}`,
@@ -515,10 +519,14 @@ export function buildMockFixture(ownerId: string, now = new Date()): MockAccount
       ...retentionAchievements,
       ...achievementDefinitions.map((d) => ({ ...d, group: 'Earlier achievements' })),
     ],
-    awards: achievementDefinitions.slice(0, 4).map((definition, index) => ({
+    awards: [
+      ...achievementDefinitions.slice(0, 4),
+      ...retentionAchievements.filter((d) => ['first-link', 'first-twig'].includes(d.id)),
+    ].map((definition, index) => ({
       definitionId: definition.id,
       criterionVersion: 1,
       earnedAt: localDay(anchor, 8 - index),
+      presentedAt: localDay(anchor, 8 - index),
     })),
     distinctFriends: 5,
   };
@@ -857,7 +865,7 @@ function mockRetention(now: Date): RetentionSummary {
     actions: [
       { id: 'core', title: 'A successful roundup this week', points: 40, completed: true },
       { id: 'recap', title: 'Review your weekly recap', points: 40, completed: false },
-      { id: 'return', title: 'A meaningful review on another day', points: 20, completed: false },
+      { id: 'return', title: 'Review a completed roundup', points: 20, completed: false },
     ],
     recap: {
       id: '00000000-0000-4000-8000-000000000001',

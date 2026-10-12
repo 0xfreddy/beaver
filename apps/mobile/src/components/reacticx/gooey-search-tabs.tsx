@@ -249,6 +249,49 @@ export function GooeySearchTabs<T extends string>({
   );
 }
 
+/** Always-open Activity search styling for selection screens. */
+export function ExpandedSearchBar({
+  value,
+  onChangeText,
+  placeholder,
+  editable = true,
+}: {
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder: string;
+  editable?: boolean;
+}) {
+  const { colors } = useTheme();
+  return (
+    <View
+      style={{
+        minHeight: HEIGHT,
+        borderRadius: HEIGHT / 2,
+        backgroundColor: colors.surface,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        gap: 12,
+      }}
+    >
+      <AppSymbol name="search" size={19} color={colors.ink} />
+      <TextInput
+        accessibilityLabel={placeholder}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        value={value}
+        onChangeText={onChangeText}
+        editable={editable}
+        autoCorrect={false}
+        returnKeyType="search"
+        clearButtonMode="while-editing"
+        onSubmitEditing={() => Keyboard.dismiss()}
+        style={{ flex: 1, minHeight: HEIGHT, fontSize: 16, color: colors.ink, paddingVertical: 10 }}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   root: { height: HEIGHT, alignSelf: 'center' },
   fallback: { borderRadius: HEIGHT / 2 },

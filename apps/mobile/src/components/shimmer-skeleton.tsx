@@ -57,7 +57,7 @@ export function RecentPurchaseSkeleton() {
   return (
     <View
       accessible
-      accessibilityLabel="Waiting for your first transaction"
+      accessibilityLabel="Loading recent purchases"
       style={styles.purchaseRoot}
     >
       {[0, 1, 2].map((row) => (

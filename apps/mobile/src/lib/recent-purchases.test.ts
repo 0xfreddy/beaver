@@ -26,6 +26,7 @@ const bankPurchase: Purchase = {
 
 const preview: OnchainSpendingPreview = {
   mode: 'historical_preview',
+  status: 'complete',
   provider: 'etherfi',
   roundingIncrementCents: 100,
   roundupPercentage: 0,

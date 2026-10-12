@@ -20,6 +20,9 @@ import type { Institution } from '../../lib/institution-directory';
 import { BankMark } from '../bank-mark';
 
 const POPULAR_BANKS: Institution[] = [
+  { id: 'popular-revolut', name: 'Revolut', avatar: null, avatarDark: null, logo: null },
+  { id: 'popular-n26', name: 'N26', avatar: null, avatarDark: null, logo: null },
+  { id: 'popular-ing', name: 'ING', avatar: null, avatarDark: null, logo: null },
   { id: 'popular-chase', name: 'Chase', avatar: null, avatarDark: null, logo: null },
   {
     id: 'popular-bank-of-america',
@@ -131,7 +134,7 @@ function BankItem({
   );
 }
 
-/** Reacticx Circular List adapted for MoneyKit’s current institution catalogue. */
+/** Bank examples across connection providers; final availability is checked in bank search. */
 export const CircularBankList = memo(function CircularBankList({
   banks,
 }: {
@@ -163,6 +166,7 @@ export const CircularBankList = memo(function CircularBankList({
   useEffect(() => {
     if (reducedMotion || visibleBanks.length < 2) return undefined;
     const timer = setInterval(() => {
+      if (userScrolling.current) return;
       const next = (selectedIndex.get() + 1) % visibleBanks.length;
       selectedIndex.set(next);
       setSelected(next);
@@ -179,10 +183,11 @@ export const CircularBankList = memo(function CircularBankList({
       <Animated.FlatList
         ref={listRef}
         accessible
-        accessibilityLabel={`Popular supported banks. ${visibleBanks[selected]?.name ?? 'Bank'} centered.`}
+        accessibilityLabel={`Bank examples. Availability varies by country. ${visibleBanks[selected]?.name ?? 'Bank'} centered.`}
         horizontal
         data={visibleBanks}
         keyExtractor={(item) => item.id}
+        style={{ height: 108, flexGrow: 0 }}
         showsHorizontalScrollIndicator={false}
         snapToInterval={itemWidth}
         decelerationRate="fast"
@@ -216,7 +221,7 @@ export const CircularBankList = memo(function CircularBankList({
 });
 
 const styles = StyleSheet.create({
-  root: { height: 146, marginHorizontal: -28 },
+  root: { minHeight: 146, marginHorizontal: -28 },
   item: { height: 108, alignItems: 'center', justifyContent: 'center' },
   logo: {
     width: 76,

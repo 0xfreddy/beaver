@@ -66,11 +66,27 @@ export function initializeMobileTelemetry() {
   }
   posthog = new PostHog(apiKey, {
     host,
+    capturePushNotificationSubscriptions: false,
+    enableSessionReplay: process.env.EXPO_PUBLIC_POSTHOG_REPLAY_ENABLED === 'true',
+    // Beaver handles financial data. Replays are useful for diagnosing broken
+    // flows, but must not include text, images, taps, logs, or network details.
+    sessionReplayConfig: {
+      captureTouches: false,
+      maskAllTextInputs: true,
+      maskAllImages: true,
+      maskAllSandboxedViews: true,
+      captureLog: false,
+      captureNetworkTelemetry: false,
+      throttleDelayMs: 1500,
+      verifyScreenshotMaskAlignment: true,
+    },
     errorTracking: {
       autocapture: {
         uncaughtExceptions: true,
         unhandledRejections: true,
         console: false,
+        nativeCrashes: true,
+        androidNdkCrashes: true,
       },
     },
   });

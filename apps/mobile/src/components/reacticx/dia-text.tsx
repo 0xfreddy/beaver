@@ -184,6 +184,7 @@ const DiaTextBase = ({
       {ready ? (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, contentStyle]}>
           <MaskedView
+            androidRenderingMode="software"
             style={{ width: size.w, height: size.h }}
             maskElement={
               <Text accessible={false} style={[textStyle, styles.mask]}>

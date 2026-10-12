@@ -7,6 +7,7 @@ export async function openBankLink(
   _token: string,
   _redirectUri: string,
   _mode: string,
+  _persistToken?: (token: string) => Promise<void>,
 ): Promise<string | null> {
   throw new Error('Connect your bank in the iOS or Android app.');
 }

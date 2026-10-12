@@ -22,9 +22,11 @@ flowchart LR
 ```
 
 - **Live mode** — the app signs in (Privy), talks HTTPS to the account
-  service, and renders real data. Money-moving logic (bank syncing, roundup
-  decisions, on-chain execution, withdrawals) runs entirely server-side; the
-  client never holds provider credentials.
+  service, and renders real data. Bank syncing, authoritative roundup
+  decisions, automated investment execution and withdrawal processing run
+  server-side; the client never holds provider credentials. Android additionally
+  constructs user-approved USDC funding transfers through Mobile Wallet Adapter.
+  The external wallet signs; the service independently checks the deposit.
 - **Mock mode** — the default for development. The mock engine mirrors the
   service's behavior for a sample account so every screen works offline.
 
@@ -57,3 +59,18 @@ construction.
   `APP_ENV`.
 - The client refuses insecure API URLs (plain HTTP outside local development)
   and treats a missing base URL as a configured failure, not a fallback.
+
+## Android and Solana Mobile
+
+The same client tree contains iOS, Android and web, with `.android.ts(x)`
+modules for Mobile Wallet Adapter. Android includes wallet deposits and
+withdrawal-destination proof requests. Privy remains the sign-in and account
+wallet provider. No direct Seed Vault SDK integration is claimed; Beaver talks
+to installed compatible wallets through MWA.
+
+The public boundary remains UI, client transfer helpers, API schemas and pure
+roundup math already used by the sample experience. It excludes API/worker
+services, bank ingestion, investment routing/execution, withdrawal processing,
+database schemas/migrations, provider integrations and deployment configuration.
+API schemas describe messages; they do not provide the private implementation.
+See [Solana Mobile](solana-mobile.md) for sample-versus-live behavior.
