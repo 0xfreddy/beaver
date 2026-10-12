@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { AccessibilityInfo, Image, StyleSheet, View, type ImageSourcePropType } from 'react-native';
-import { Canvas, ColorMatrix, Image as SkiaImage, useImage } from '@shopify/react-native-skia';
 import MaskedView from '@react-native-masked-view/masked-view';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
@@ -15,24 +14,16 @@ import Animated, {
 } from 'react-native-reanimated';
 
 /** Reacticx Verified Shine sweep, masked to the coin's actual alpha silhouette. */
-export function AchievementCoin({
-  source,
-  size,
-  shine = false,
-  locked = false,
-}: {
-  source: ImageSourcePropType;
-  size: number;
-  shine?: boolean;
-  locked?: boolean;
-}) {
+function ShiningCoin({ source, size }: { source: ImageSourcePropType; size: number }) {
   const progress = useSharedValue(0);
   const [reduced, setReduced] = useState(true);
   useEffect(() => {
     let live = true;
-    void AccessibilityInfo.isReduceMotionEnabled().then((value) => {
-      if (live) setReduced(value);
-    });
+    void AccessibilityInfo.isReduceMotionEnabled()
+      .then((value) => {
+        if (live) setReduced(value);
+      })
+      .catch(() => {});
     const sub = AccessibilityInfo.addEventListener('reduceMotionChanged', setReduced);
     return () => {
       live = false;
@@ -42,7 +33,7 @@ export function AchievementCoin({
   useEffect(() => {
     cancelAnimation(progress);
     progress.set(0);
-    if (shine && !reduced)
+    if (!reduced)
       progress.set(
         withRepeat(
           withDelay(
@@ -57,7 +48,7 @@ export function AchievementCoin({
         ),
       );
     return () => cancelAnimation(progress);
-  }, [progress, shine, reduced]);
+  }, [progress, reduced]);
   const waveWidth = size * 0.3;
   const wave = useAnimatedStyle(() => ({
     transform: [
@@ -66,19 +57,16 @@ export function AchievementCoin({
     ],
   }));
   return (
-    <View accessible={false} style={{ width: size, height: size, opacity: locked ? 0.45 : 1 }}>
-      {locked ? (
-        <GrayCoin source={source} size={size} />
-      ) : (
-        <Image
-          source={source}
-          accessible={false}
-          resizeMode="contain"
-          fadeDuration={0}
-          style={{ width: size, height: size }}
-        />
-      )}
-      {shine && !reduced && (
+    <View accessible={false} style={{ width: size, height: size, opacity: 1 }}>
+      <Image
+        source={source}
+        accessible={false}
+        resizeMode="contain"
+        resizeMethod="resize"
+        fadeDuration={0}
+        style={{ width: size, height: size }}
+      />
+      {!reduced && (
         <MaskedView
           pointerEvents="none"
           style={StyleSheet.absoluteFill}
@@ -105,20 +93,27 @@ export function AchievementCoin({
   );
 }
 
-function GrayCoin({ source, size }: { source: ImageSourcePropType; size: number }) {
-  const image = useImage(Image.resolveAssetSource(source));
+/** Grid cells stay native and static: no canvas, animation, or per-tile listeners. */
+export function AchievementCoin({
+  source,
+  size,
+  shine = false,
+  locked = false,
+}: {
+  source: ImageSourcePropType;
+  size: number;
+  shine?: boolean;
+  locked?: boolean;
+}) {
+  if (shine && !locked) return <ShiningCoin source={source} size={size} />;
   return (
-    <Canvas style={{ width: size, height: size }}>
-      {image && (
-        <SkiaImage image={image} x={0} y={0} width={size} height={size} fit="contain">
-          <ColorMatrix
-            matrix={[
-              0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0, 0, 0.2126, 0.7152, 0.0722, 0,
-              0, 0, 0, 0, 1, 0,
-            ]}
-          />
-        </SkiaImage>
-      )}
-    </Canvas>
+    <Image
+      source={source}
+      accessible={false}
+      resizeMode="contain"
+      resizeMethod="resize"
+      fadeDuration={0}
+      style={{ width: size, height: size, opacity: locked ? 0.45 : 1 }}
+    />
   );
 }

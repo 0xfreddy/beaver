@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 import { AppState, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Button, TextButton, Type } from '../components/ui';
 import { OnboardingAnimation } from '../components/onboarding-animation';
 import { OnboardingNotificationCard } from '../components/onboarding-notification-stack';
@@ -15,9 +14,8 @@ import {
   requestNotificationPermission,
   type NotificationPermissionState,
 } from '../lib/notifications';
-import { acceptNotificationConsent } from '../lib/notification-consent';
-import { syncNotificationRegistration } from '../lib/notification-registration';
-import { notificationOfferKey } from '../lib/use-notifications';
+import { deferNotificationOffer } from '../lib/notification-consent';
+import { enableAllNotifications } from '../lib/notification-registration';
 import { posthog } from '../lib/telemetry';
 
 export default function NotificationSetup() {
@@ -27,6 +25,8 @@ export default function NotificationSetup() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const running = useRef(false);
+  const waitingForSettings = useRef(false);
+  const resumeSetup = useRef(() => {});
   const userId = auth.session?.user.id;
   const owner = useRef(userId);
   owner.current = userId;
@@ -38,13 +38,15 @@ export default function NotificationSetup() {
     const refresh = () =>
       void notificationPermissionState()
         .then((value) => {
-          if (active) setPermission(value);
+          if (active) {
+            setPermission(value);
+            if (value === 'granted' && waitingForSettings.current) resumeSetup.current();
+          }
         })
         .catch(() => {
           if (active) setError('Couldn’t check notification permission. Try again.');
         });
     refresh();
-    if (userId) void AsyncStorage.setItem(notificationOfferKey(userId), 'shown').catch(() => {});
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') refresh();
     });
@@ -54,33 +56,44 @@ export default function NotificationSetup() {
       sub.remove();
     };
   }, [userId]);
-  async function activate() {
+  resumeSetup.current = () => {
+    void activate(true);
+  };
+  async function activate(fromSettings = false) {
     if (!userId || running.current) return;
     running.current = true;
     setBusy(true);
     setError(null);
     try {
-      await acceptNotificationConsent(userId);
-      if (permission === 'denied') {
+      if (!fromSettings && permission === 'denied') {
+        waitingForSettings.current = true;
         await openNotificationSettings();
         return;
       }
-      const next = await requestNotificationPermission();
+      const next = fromSettings
+        ? await notificationPermissionState()
+        : await requestNotificationPermission();
       if (!mounted.current || owner.current !== userId) return;
       setPermission(next);
       posthog?.capture('notification_permission_requested', { granted: next === 'granted' });
       if (next !== 'granted') return;
-      const registered = await syncNotificationRegistration(
+      const registered = await enableAllNotifications(
         userId,
         auth.getAccessToken,
         () => mounted.current && owner.current === userId,
       );
       if (!mounted.current || owner.current !== userId) return;
+      waitingForSettings.current = false;
       if (registered) dismiss();
-      else setError('Notifications are enabled. We couldn’t finish registration yet. Try again.');
+      else setError('Notification setup is incomplete. Try again.');
     } catch {
+      waitingForSettings.current = false;
       if (!mounted.current || owner.current !== userId) return;
-      setError('Notification setup could not finish. Check your connection and try again.');
+      setError(
+        !fromSettings && permission === 'denied'
+          ? 'Couldn’t open Settings. Open Settings, choose Beaver, then Notifications.'
+          : 'Notification setup could not finish. Try again.',
+      );
     } finally {
       running.current = false;
       if (mounted.current) setBusy(false);
@@ -95,7 +108,11 @@ export default function NotificationSetup() {
       error={error}
       ready={!!userId}
       onActivate={() => void activate()}
-      onDismiss={dismiss}
+      onDismiss={() => {
+        if (running.current) return;
+        if (userId) deferNotificationOffer(userId);
+        dismiss();
+      }}
     />
   );
 }

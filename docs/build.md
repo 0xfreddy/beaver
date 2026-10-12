@@ -49,8 +49,16 @@ The repository includes `development`, `development-simulator`, `production`,
 4. For iOS signing, set your own `EXPO_APPLE_TEAM_ID`. No maintainer signing
    identity, signing key, or EAS project is shipped in the snapshot.
 
-Environment variables for store builds belong in EAS secrets, never in the
-repository.
+For Android cloud builds, configure `GOOGLE_SERVICES_JSON` as an EAS file
+variable containing your own Firebase `google-services.json`, matched to your
+Android package, and configure FCM credentials in your EAS project. The build
+fails without this file, including the `android-demo` profile. Keep it out of Git.
+Production profiles also require both `EXPO_PUBLIC_PRIVY_APP_ID` and
+`EXPO_PUBLIC_PRIVY_CLIENT_ID`; the app configuration rejects missing values.
+Local sample-mode exports do not require these credentials.
+
+Configure build environment variables in your own EAS project. Only client-safe
+values may use the `EXPO_PUBLIC_` prefix.
 
 ## Android / Solana Mobile APK
 

@@ -7,7 +7,11 @@ import { apiRequest } from './api';
 import { notificationPermissionState } from './notifications';
 import { posthog } from './telemetry';
 
-import { hasNotificationConsent, NOTIFICATION_CONSENT_VERSION } from './notification-consent';
+import {
+  completeNotificationConsent,
+  hasNotificationConsent,
+  NOTIFICATION_CONSENT_VERSION,
+} from './notification-consent';
 
 const installationKey = 'beaver.notification-installation.v1';
 let installationPromise: Promise<string> | undefined;
@@ -48,9 +52,10 @@ async function register(
   userId: string,
   getAccessToken: () => Promise<string | null>,
   isCurrent: () => boolean = () => true,
+  enableAllPreferences = false,
 ) {
   if (Platform.OS !== 'ios' && Platform.OS !== 'android') return false;
-  const consent = await hasNotificationConsent(userId);
+  const consent = enableAllPreferences || (await hasNotificationConsent(userId));
   const permission = consent ? await notificationPermissionState() : 'undetermined';
   const installationId = await notificationInstallationId();
   if (!isCurrent()) return false;
@@ -83,21 +88,28 @@ async function register(
     appId: Application.applicationId,
   });
   if (!isCurrent()) return false;
-  await apiRequest(getAccessToken, '/v1/notification-devices', {
-    method: 'PUT',
-    body: JSON.stringify({
-      installationId,
-      permission,
-      consentVersion: NOTIFICATION_CONSENT_VERSION,
-      token: String(token.data),
-      platform: Platform.OS,
-      appId: Application.applicationId,
-      appVersion: Application.nativeApplicationVersion,
-      appBuild: Number(Application.nativeBuildVersion) || undefined,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-    }),
-  });
-  return true;
+  const result = await apiRequest<{ registered: boolean }>(
+    getAccessToken,
+    '/v1/notification-devices',
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        installationId,
+        permission,
+        consentVersion: NOTIFICATION_CONSENT_VERSION,
+        enableAllPreferences,
+        token: String(token.data),
+        platform: Platform.OS,
+        appId: Application.applicationId,
+        appVersion: Application.nativeApplicationVersion,
+        appBuild: Number(Application.nativeBuildVersion) || undefined,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
+    },
+  );
+  if (!isCurrent() || result.registered !== true) return false;
+  if (enableAllPreferences) await completeNotificationConsent(userId);
+  return isCurrent();
 }
 
 async function disconnect(getAccessToken: () => Promise<string | null>) {
@@ -125,6 +137,19 @@ export function syncNotificationRegistration(
   return serialized(() =>
     epoch === generation && isCurrent()
       ? register(userId, getAccessToken, () => epoch === generation && isCurrent())
+      : Promise.resolve(false),
+  );
+}
+/** Explicit setup enables all categories atomically with registration on the server. */
+export function enableAllNotifications(
+  userId: string,
+  getAccessToken: () => Promise<string | null>,
+  isCurrent: () => boolean = () => true,
+) {
+  const epoch = generation;
+  return serialized(() =>
+    epoch === generation && isCurrent()
+      ? register(userId, getAccessToken, () => epoch === generation && isCurrent(), true)
       : Promise.resolve(false),
   );
 }

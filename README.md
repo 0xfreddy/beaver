@@ -19,7 +19,9 @@ iOS · Android · Solana Mobile
 <a href="#-try-it"><img src="assets/app-store.svg" alt="Download on the App Store" height="52" /></a>
 <a href="https://testflight.apple.com/join/u2B71KkZ"><img src="assets/testflight.png" alt="Join the TestFlight beta" height="52" /></a>
 
-[**Download Android / Solana Mobile APK — v0.1.0 (5)**](https://expo.dev/artifacts/eas/1lfS_YpHgz2rYTNXXd-5h2nKz3jiF_nLfeq-b3XRS70.apk)
+[**Download Android / Solana Mobile APK — v0.1.0 (7)**](https://github.com/0xfreddy/beaver/releases/download/android-v0.1.0-7/Beaver-0.1.0-7.apk)
+
+[Release notes, Play bundle and checksums](https://github.com/0xfreddy/beaver/releases/tag/android-v0.1.0-7).
 
 Beaver rounds up your everyday card purchases and invests the spare change
 into fractional stock — [xStocks](https://xstocks.fi) and
@@ -57,13 +59,13 @@ is routed on-chain through [Jupiter](https://jup.ag).
 | :--- | :--- | :--- | :--- |
 | App Store | — | Public listing pending. | 🚧 coming soon |
 | TestFlight | latest | Public beta — newest features, may contain bugs. | [Join the beta](https://testflight.apple.com/join/u2B71KkZ) |
-| Android / Solana Mobile | v0.1.0 (5) | Signed standalone live APK; no Metro required. | [Download APK](https://expo.dev/artifacts/eas/1lfS_YpHgz2rYTNXXd-5h2nKz3jiF_nLfeq-b3XRS70.apk) |
+| Android / Solana Mobile | v0.1.0 (7) | Signed standalone live APK; no Metro required. | [Download APK](https://github.com/0xfreddy/beaver/releases/download/android-v0.1.0-7/Beaver-0.1.0-7.apk) |
 | **Run locally** | — | **The full app in mock mode** — no keys, no backend. | [Build it yourself ↓](#-build-it-yourself) |
 
 The Android APK also targets Solana Mobile devices with an MWA-compatible wallet.
 It uses **live mainnet accounts**, not the sample account. Sign-in requires the
 hosted service. Wallet deposit/withdrawal acceptance on a physical device and
-dApp Store publication remain pending; see [release status](docs/releases/2026-10-12.md).
+dApp Store publication remain pending; see [release status](docs/releases/2026-10-13.md).
 The APK uses `com.beaver.app` and replaces the existing Android variant when signed
 with the same certificate. [Install and judging guide](docs/solana-mobile.md).
 
@@ -77,7 +79,7 @@ with the same certificate. [Install and judging guide](docs/solana-mobile.md).
 - ☀️ **Solana Mobile** — approve USDC deposits from an MWA-compatible wallet into your existing Privy account wallet; iOS/web retain address and QR funding
 - 🌗 **Native feel** — Liquid Glass on iOS 26, dark mode, haptics, and an offline mock account
 
-[Latest client fixes and release notes](docs/releases/2026-10-12.md).
+[Latest client fixes and release notes](docs/releases/2026-10-13.md).
 
 ## 🔓 What's open, what's not
 

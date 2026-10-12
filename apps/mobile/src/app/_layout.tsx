@@ -164,12 +164,7 @@ function Navigation({ fontsReady }: { fontsReady: boolean }) {
   useNotifications({
     canNavigate: !obscured && !needsOnboarding && hasSession && appState === 'active',
     canOffer:
-      !obscured &&
-      !needsOnboarding &&
-      hasSession &&
-      !biometricOfferEligible &&
-      onMainAppSurface &&
-      appState === 'active',
+      !obscured && !needsOnboarding && hasSession && onMainAppSurface && appState === 'active',
   });
   const splashHidden = useRef(false);
   const hideNativeSplash = () => {

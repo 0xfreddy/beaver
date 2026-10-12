@@ -117,34 +117,22 @@ export async function notificationPermissionState(): Promise<NotificationPermiss
 /** Only a deliberate opt-in action may show the OS prompt. Remote setup runs separately. */
 export async function requestNotificationPermission(): Promise<NotificationPermissionState> {
   if (!supportsNotifications) return 'denied';
-  try {
-    const settings = await Notifications.getPermissionsAsync();
-    if (
-      settings.granted &&
-      settings.ios?.status !== Notifications.IosAuthorizationStatus.PROVISIONAL
-    )
-      return 'granted';
-    if (settings.canAskAgain === false) return 'denied';
-    if (Platform.OS === 'android')
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'Beaver',
-        importance: Notifications.AndroidImportance.HIGH,
-      });
-    const requested = await Notifications.requestPermissionsAsync();
-    if (!requested.granted) return 'denied';
+  const settings = await Notifications.getPermissionsAsync();
+  if (settings.granted && settings.ios?.status !== Notifications.IosAuthorizationStatus.PROVISIONAL)
     return 'granted';
-  } catch {
-    return 'denied';
-  }
+  if (settings.canAskAgain === false) return 'denied';
+  if (Platform.OS === 'android')
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Beaver',
+      importance: Notifications.AndroidImportance.HIGH,
+    });
+  const requested = await Notifications.requestPermissionsAsync();
+  if (!requested.granted) return 'denied';
+  return 'granted';
 }
 
 export async function openNotificationSettings() {
-  try {
-    await Linking.openSettings();
-  } catch {
-    // Opening the settings pane can fail on some devices; the caption already
-    // explains where to find the toggle.
-  }
+  await Linking.openSettings();
 }
 
 /**

@@ -7,7 +7,7 @@ code style, and what a pull request needs before it can merge.
 
 ```sh
 corepack enable            # provides pnpm 11
-git clone https://github.com/__REPO__.git
+git clone https://github.com/0xfreddy/beaver.git
 cd beaver
 pnpm install
 cp apps/mobile/.env.example apps/mobile/.env

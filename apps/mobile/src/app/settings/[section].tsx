@@ -21,8 +21,8 @@ import { useTheme } from '../../theme';
 import { useMockData } from '../../providers/mock-data-provider';
 import { useAuth } from '../../providers/auth-provider';
 import { ApiError, apiRequest } from '../../lib/api';
-import { acceptNotificationConsent, hasNotificationConsent } from '../../lib/notification-consent';
-import { syncNotificationRegistration } from '../../lib/notification-registration';
+import { hasCompletedNotificationSetup } from '../../lib/notification-consent';
+import { enableAllNotifications } from '../../lib/notification-registration';
 import { posthog } from '../../lib/telemetry';
 import {
   notificationPermissionState,
@@ -451,16 +451,22 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
 
   const reload = async () => {
     const nextPermission = await notificationPermissionState();
-    const consent = auth.user?.id ? await hasNotificationConsent(auth.user.id) : false;
+    const consent = auth.user?.id ? await hasCompletedNotificationSetup(auth.user.id) : false;
     setPermission(nextPermission === 'granted' && !consent ? 'undetermined' : nextPermission);
     try {
-      let loaded = await apiRequest<NotificationPreferences>(auth.getAccessToken, '/v1/notification-preferences');
-      if (nextPermission === 'granted' && enablingInSettings.current) {
-        const enabled = { ...loaded };
-        for (const [id] of notificationChannels) enabled[id] = true;
-        loaded = await apiRequest<NotificationPreferences>(auth.getAccessToken, '/v1/notification-preferences', { method: 'PUT', body: JSON.stringify(enabled) });
+      let loaded = await apiRequest<NotificationPreferences>(
+        auth.getAccessToken,
+        '/v1/notification-preferences',
+      );
+      if (nextPermission === 'granted' && enablingInSettings.current && auth.user?.id) {
         enablingInSettings.current = false;
-        if (auth.user?.id) void syncNotificationRegistration(auth.user.id, auth.getAccessToken).catch(() => {});
+        const registered = await enableAllNotifications(auth.user.id, auth.getAccessToken);
+        if (!registered) throw new Error('Notification setup is incomplete. Try again.');
+        setPermission('granted');
+        loaded = await apiRequest<NotificationPreferences>(
+          auth.getAccessToken,
+          '/v1/notification-preferences',
+        );
       }
       if (!savingRef.current) setPrefs(loaded);
     } catch (cause) {
@@ -486,26 +492,31 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
     setSaving(true);
     setMessage(null);
     try {
-      if (auth.user?.id) await acceptNotificationConsent(auth.user.id);
       if (permission === 'denied') {
         enablingInSettings.current = true;
         await openNotificationSettings();
         return;
       }
       const next = await requestNotificationPermission();
-      setPermission(next);
+      setPermission(next === 'granted' ? 'undetermined' : next);
       if (next !== 'granted') return;
-      const enabled = { ...prefs };
-      for (const [id] of notificationChannels) enabled[id] = true;
-      const saved = await apiRequest<NotificationPreferences>(auth.getAccessToken,
-        '/v1/notification-preferences', { method: 'PUT', body: JSON.stringify(enabled) });
-      setPrefs(saved);
-      if (auth.user?.id) {
-        const registered = await syncNotificationRegistration(auth.user.id, auth.getAccessToken);
-        if (!registered) setMessage('Notifications enabled. Device registration will retry.');
+      if (!auth.user?.id) return;
+      const registered = await enableAllNotifications(auth.user.id, auth.getAccessToken);
+      if (!registered) {
+        setPermission('undetermined');
+        throw new Error('Notification setup is incomplete. Try again.');
       }
+      setPermission('granted');
+      setPrefs(
+        await apiRequest<NotificationPreferences>(
+          auth.getAccessToken,
+          '/v1/notification-preferences',
+        ),
+      );
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : 'Couldn’t enable notifications. Try again.');
+      setMessage(
+        cause instanceof Error ? cause.message : 'Couldn’t enable notifications. Try again.',
+      );
     } finally {
       savingRef.current = false;
       setSaving(false);
@@ -544,7 +555,13 @@ function NotificationPreferences({ sample }: { sample: boolean }) {
             Beaver can notify you about roundups, deposits and bank connection issues. You choose
             which ones below.
           </Type>
-          <Button title="Enable notifications" appearance="onboarding" loading={saving} disabled={!prefs} onPress={() => void enablePermission()} />
+          <Button
+            title="Enable notifications"
+            appearance="onboarding"
+            loading={saving}
+            disabled={!prefs}
+            onPress={() => void enablePermission()}
+          />
         </Card>
       ) : permission === 'denied' ? (
         <Card>

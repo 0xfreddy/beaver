@@ -2,6 +2,7 @@ import { RetentionProgress } from './retention-progress';
 import { useMockData } from '../providers/mock-data-provider';
 import { useEffect, useState } from 'react';
 import {
+  FlatList,
   ActionSheetIOS,
   Alert,
   Platform,
@@ -183,6 +184,7 @@ export default function Leaderboards() {
       </View>
     );
   }
+  if (scope === 'achievements') return <AchievementsPanel onChangeScope={setScope} />;
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <FlashList
@@ -199,7 +201,7 @@ export default function Leaderboards() {
           paddingBottom: insets.bottom + 24,
         }}
         refreshControl={
-          auth.session && scope !== 'achievements' ? (
+          auth.session ? (
             <RefreshControl
               refreshing={board.isFetching && !board.isFetchingNextPage}
               onRefresh={() => void refresh()}
@@ -208,8 +210,7 @@ export default function Leaderboards() {
           ) : undefined
         }
         onEndReached={() => {
-          if (scope !== 'achievements' && board.hasNextPage && !board.isFetching && !board.isError)
-            void board.fetchNextPage();
+          if (board.hasNextPage && !board.isFetching && !board.isError) void board.fetchNextPage();
         }}
         onEndReachedThreshold={0.3}
         ListHeaderComponent={
@@ -221,7 +222,7 @@ export default function Leaderboards() {
                 Sample leaderboard · illustrative activity
               </Type>
             ) : null}
-            {auth.session && scope !== 'achievements' ? (
+            {auth.session ? (
               <>
                 <RetentionProgress />
                 {first ? (
@@ -252,12 +253,11 @@ export default function Leaderboards() {
                 ) : null}
               </>
             ) : null}
-            {scope === 'achievements' ? <AchievementsPanel /> : null}
             {!auth.session ? (
               <>
                 <Button title="Sign in" onPress={() => router.push('/onboarding/account')} />
               </>
-            ) : scope !== 'achievements' ? (
+            ) : (
               <>
                 {board.isPending ? (
                   <View accessibilityLabel="Loading leaderboard" style={{ gap: 12 }}>
@@ -281,11 +281,11 @@ export default function Leaderboards() {
                 ) : null}
                 {actionError ? <Type accessibilityRole="alert">{actionError}</Type> : null}
               </>
-            ) : null}
+            )}
           </View>
         }
         ListEmptyComponent={
-          auth.session && scope !== 'achievements' && !board.isPending && !board.isError ? (
+          auth.session && !board.isPending && !board.isError ? (
             <View style={{ paddingVertical: 20, gap: 8 }}>
               <Type variant="headline">No one is ranked yet</Type>
               <Type muted>Complete a weekly recap to start earning points.</Type>
@@ -293,94 +293,131 @@ export default function Leaderboards() {
           ) : null
         }
         ListFooterComponent={
-          scope === 'achievements' ? null : (
-            <View
-              style={{
-                gap: 16,
-                paddingTop: 16,
-                minHeight: rows.length <= 1 ? Math.max(180, height - 350) : undefined,
-              }}
-            >
-              {board.isFetchingNextPage ? <ActivityIndicator color={colors.ink} /> : null}
-              {board.hasNextPage ? (
+          <View
+            style={{
+              gap: 16,
+              paddingTop: 16,
+              minHeight: rows.length <= 1 ? Math.max(180, height - 350) : undefined,
+            }}
+          >
+            {board.isFetchingNextPage ? <ActivityIndicator color={colors.ink} /> : null}
+            {board.hasNextPage ? (
+              <Button
+                title="Load more"
+                secondary
+                disabled={board.isFetching}
+                onPress={() => void board.fetchNextPage()}
+              />
+            ) : null}
+            {first && !rows.some((r) => r.isYou) ? (
+              <>
+                <Type variant="headline">Your progress</Type>
+                {row(first.own)}
+              </>
+            ) : null}
+            {auth.session ? (
+              <View style={{ marginTop: 'auto' }}>
                 <Button
-                  title="Load more"
-                  secondary
-                  disabled={board.isFetching}
-                  onPress={() => void board.fetchNextPage()}
+                  title="Invite friends"
+                  appearance="onboarding"
+                  onPress={() => router.push('/invite-friends')}
                 />
-              ) : null}
-              {first && !rows.some((r) => r.isYou) ? (
-                <>
-                  <Type variant="headline">Your progress</Type>
-                  {row(first.own)}
-                </>
-              ) : null}
-              {auth.session ? (
-                <View style={{ marginTop: 'auto' }}>
-                  <Button
-                    title="Invite friends"
-                    appearance="onboarding"
-                    onPress={() => router.push('/invite-friends')}
-                  />
-                </View>
-              ) : null}
-            </View>
-          )
+              </View>
+            ) : null}
+          </View>
         }
       />
     </View>
   );
 }
 
-function AchievementsPanel() {
+function AchievementsPanel({
+  onChangeScope,
+}: {
+  onChangeScope: (scope: 'global' | 'friends' | 'achievements') => void;
+}) {
   const auth = useAuth();
+  const sample = useMockData();
+  const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   const query = useLive<AchievementSummary>('/v1/social/achievements');
   const summary = auth.session ? query.data : undefined;
   const { width } = useWindowDimensions();
-  const cell = Math.floor((Math.min(width, 600) - 48 - 24) / 3);
-  if (!auth.session) return null;
-  if (query.isPending) return <Type muted>Loading achievements…</Type>;
-  if (!summary)
-    return <Button title="Retry achievements" secondary onPress={() => void query.refetch()} />;
-  const unlocked = summary.definitions.filter((d) =>
-    summary.awards.some((a) => a.definitionId === d.id),
-  ).length;
+  const cell = (Math.min(width, 600) - 48 - 24) / 3;
+  const earnedIds = new Set(summary?.awards.map((award) => award.definitionId));
   return (
-    <View style={{ gap: 24 }}>
-      <Type variant="headline" style={{ textAlign: 'center' }}>
-        {unlocked} of {summary.definitions.length}
-      </Type>
-      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
-        {summary.definitions.map((definition) => {
-          const earned = summary.awards.some((award) => award.definitionId === definition.id);
-          const asset = achievementAssets[definition.assetKey || definition.id];
-          return (
-            <Pressable
-              key={definition.id}
-              disabled={!earned}
-              accessibilityRole="button"
-              accessibilityState={{ disabled: !earned }}
-              accessibilityLabel={`${definition.title}, ${earned ? 'unlocked' : 'locked'}. ${definition.description}`}
-              onPress={() =>
-                router.push({ pathname: '/achievement/[id]', params: { id: definition.id } })
-              }
-              style={({ pressed }) => ({
-                width: cell,
-                alignItems: 'center',
-                gap: 8,
-                paddingVertical: 8,
-                opacity: pressed ? 0.75 : 1,
-              })}
-            >
-              {asset && <AchievementCoin source={asset.thumbnail} size={cell} locked={!earned} />}
-              <Type variant="caption" style={{ textAlign: 'center', fontSize: 12 }} muted={!earned}>
-                {definition.title}
+    <FlatList
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{
+        paddingHorizontal: 24,
+        paddingTop: insets.top + 12,
+        paddingBottom: insets.bottom + 24,
+        maxWidth: 600,
+        width: '100%',
+        alignSelf: 'center',
+      }}
+      data={summary?.definitions ?? []}
+      numColumns={3}
+      initialNumToRender={4}
+      maxToRenderPerBatch={2}
+      windowSize={3}
+      columnWrapperStyle={{ gap: 12 }}
+      keyExtractor={(definition) => definition.id}
+      refreshing={query.isRefetching}
+      onRefresh={() => void query.refetch()}
+      ListHeaderComponent={
+        <View style={{ gap: 16, paddingBottom: 28 }}>
+          <Type variant="title">Leaderboard</Type>
+          <SocialScope scope="achievements" onChange={onChangeScope} />
+          {sample.active && (
+            <Type variant="caption" muted>
+              Sample achievements · illustrative activity
+            </Type>
+          )}
+          {!auth.session ? (
+            <Button title="Sign in" onPress={() => router.push('/onboarding/account')} />
+          ) : query.isPending ? (
+            <Type muted>Loading achievements…</Type>
+          ) : !summary ? (
+            <>
+              <Type accessibilityRole="alert">
+                {query.error?.message ?? 'Couldn’t load achievements.'}
               </Type>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
+              <Button title="Retry achievements" secondary onPress={() => void query.refetch()} />
+            </>
+          ) : (
+            <Type variant="headline" style={{ textAlign: 'center' }}>
+              {summary.definitions.filter((d) => earnedIds.has(d.id)).length} of{' '}
+              {summary.definitions.length}
+            </Type>
+          )}
+        </View>
+      }
+      renderItem={({ item: definition }) => {
+        const earned = earnedIds.has(definition.id);
+        const asset = achievementAssets[definition.assetKey || definition.id];
+        return (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${definition.title}, ${earned ? 'unlocked' : 'locked'}. ${definition.description}`}
+            onPress={() =>
+              router.push({ pathname: '/achievement/[id]', params: { id: definition.id } })
+            }
+            style={({ pressed }) => ({
+              width: cell,
+              alignItems: 'center',
+              gap: 8,
+              paddingVertical: 8,
+              opacity: pressed ? 0.75 : 1,
+            })}
+          >
+            {asset && <AchievementCoin source={asset.thumbnail} size={cell} locked={!earned} />}
+            <Type variant="caption" style={{ textAlign: 'center', fontSize: 12 }} muted={!earned}>
+              {definition.title}
+            </Type>
+          </Pressable>
+        );
+      }}
+    />
   );
 }

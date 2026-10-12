@@ -7,9 +7,18 @@ const f = vi.hoisted(() => ({
   register: vi.fn(),
   unregister: vi.fn(),
   api: vi.fn(),
+  store: vi.fn(),
 }));
 vi.mock('@react-native-async-storage/async-storage', () => ({
-  default: { getItem: async (key: string) => key.includes('notification-consent') ? (f.consent ? 'accepted' : null) : '00000000-0000-4000-8000-000000000001', setItem: vi.fn() },
+  default: {
+    getItem: async (key: string) =>
+      key.includes('notification-consent')
+        ? f.consent
+          ? 'accepted'
+          : null
+        : '00000000-0000-4000-8000-000000000001',
+    setItem: f.store,
+  },
 }));
 vi.mock('expo-application', () => ({
   applicationId: 'com.roundups.app',
@@ -30,6 +39,7 @@ vi.mock('./telemetry', () => ({
 }));
 import {
   syncNotificationRegistration,
+  enableAllNotifications,
   disconnectNotificationDevice,
 } from './notification-registration';
 const access = async () => 'auth';
@@ -116,5 +126,42 @@ it('keeps push disabled until fresh consent even when OS permission is granted',
   await expect(syncNotificationRegistration('user', access)).resolves.toBe(false);
   expect(f.token).not.toHaveBeenCalled();
   expect(f.register).not.toHaveBeenCalled();
-  expect(JSON.parse(f.api.mock.calls[0]![2].body)).toMatchObject({ token: null, permission: 'undetermined' });
+  expect(JSON.parse(f.api.mock.calls[0]![2].body)).toMatchObject({
+    token: null,
+    permission: 'undetermined',
+  });
+});
+
+it('does not report success when the backend rejects device registration', async () => {
+  f.api.mockResolvedValueOnce({ registered: false });
+  await expect(syncNotificationRegistration('user', access)).resolves.toBe(false);
+});
+
+it('explicit opt-in enables every category and completes consent only after server success', async () => {
+  f.consent = false;
+  await expect(enableAllNotifications('user', access)).resolves.toBe(true);
+  expect(JSON.parse(f.api.mock.calls[0]![2].body)).toMatchObject({
+    enableAllPreferences: true,
+    consentVersion: 4,
+    permission: 'granted',
+  });
+  expect(f.store).toHaveBeenCalledWith('beaver.notification-consent.v4:user', 'completed');
+});
+it('failed activation leaves setup incomplete for the next invitation', async () => {
+  f.consent = false;
+  f.api.mockResolvedValueOnce({ registered: false });
+  await expect(enableAllNotifications('user', access)).resolves.toBe(false);
+  expect(f.store).not.toHaveBeenCalled();
+});
+it('denied permission never completes setup or enables categories', async () => {
+  f.permission = 'denied';
+  await expect(enableAllNotifications('user', access)).resolves.toBe(false);
+  expect(f.register).not.toHaveBeenCalled();
+  expect(f.store).not.toHaveBeenCalled();
+  expect(JSON.parse(f.api.mock.calls[0]![2].body).enableAllPreferences).not.toBe(true);
+});
+it('background token refresh never resets category opt-outs', async () => {
+  await syncNotificationRegistration('user', access);
+  expect(JSON.parse(f.api.mock.calls[0]![2].body).enableAllPreferences).toBe(false);
+  expect(f.store).not.toHaveBeenCalled();
 });

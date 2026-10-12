@@ -192,6 +192,7 @@ export const notificationDeviceSchema = z
   .object({
     installationId: z.uuid(),
     consentVersion: z.number().int().nonnegative().optional(),
+    enableAllPreferences: z.boolean().optional(),
     platform: z.enum(['ios', 'android']),
     appId: z.string().min(3).max(200),
     appVersion: z.string().max(80).nullable(),

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Platform, View } from 'react-native';
+import { useEffect } from 'react';
+import { Platform, ScrollView, View, useWindowDimensions } from 'react-native';
 import { router, useLocalSearchParams, useIsFocused } from 'expo-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { AchievementSummary } from '@roundups/types';
@@ -18,7 +18,7 @@ export default function AchievementDetail() {
   const focused = useIsFocused();
   const cache = useQueryClient();
   const { colors } = useTheme();
-  const [stage, setStage] = useState({ width: 0, height: 0 });
+  const { width } = useWindowDimensions();
   const query = useLive<AchievementSummary>('/v1/social/achievements');
   const summary = auth.session ? query.data : undefined;
   const definition = summary?.definitions.find((item) => item.id === id);
@@ -48,56 +48,54 @@ export default function AchievementDetail() {
   useEffect(() => {
     if (focused && asset && award?.presentedAt === null && status === 'idle') mutate();
   }, [focused, asset, award?.presentedAt, status, mutate]);
-  const size = Math.max(0, Math.min(stage.width - 24, stage.height - 16));
+  const size = Math.max(0, Math.min(width - 48, 320));
   return (
-    <View
+    <ScrollView
       onAccessibilityEscape={() => router.back()}
-      style={{ flex: 1, backgroundColor: colors.background, paddingTop: 24, paddingBottom: 32 }}
+      contentInsetAdjustmentBehavior="automatic"
+      style={{ flex: 1, backgroundColor: colors.background }}
+      contentContainerStyle={{ alignItems: 'center', padding: 24, paddingBottom: 32, gap: 16 }}
     >
-      {definition && award && asset ? (
+      {definition && asset ? (
         <>
-          <View
-            onLayout={(event) => setStage(event.nativeEvent.layout)}
-            style={{ flex: 3, alignItems: 'center', justifyContent: 'center' }}
-          >
-            {size > 0 && <AchievementCoin source={asset.detail} size={size} shine={focused} />}
-          </View>
-          <View
-            style={{
-              flex: 1,
-              paddingHorizontal: 24,
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              paddingTop: 12,
+          <AchievementCoin
+            source={asset.detail}
+            size={size}
+            shine={focused && !!award}
+            locked={!award}
+          />
+          <DiaText
+            text={definition.title}
+            baseColor={colors.ink}
+            bandRatio={0.7}
+            duration={1400}
+            delay={200}
+            autoPlay={focused}
+            style={{ width: '100%' }}
+            textStyle={{
+              fontSize: 30,
+              lineHeight: 38,
+              fontWeight: '500',
+              letterSpacing: -0.7,
+              textAlign: 'center',
             }}
-          >
-            <DiaText
-              text={definition.title}
-              baseColor={colors.ink}
-              bandRatio={0.7}
-              duration={1400}
-              delay={200}
-              autoPlay={focused}
-              style={{ width: '100%' }}
-              textStyle={{
-                fontSize: 30,
-                lineHeight: 38,
-                fontWeight: '500',
-                letterSpacing: -0.7,
-                textAlign: 'center',
-              }}
-            />
-          </View>
+          />
+          <Type muted style={{ textAlign: 'center' }}>
+            {definition.description}
+          </Type>
+          {!award && (
+            <Type variant="caption" muted>
+              Not unlocked yet
+            </Type>
+          )}
         </>
       ) : (
-        <View
-          style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 16, padding: 24 }}
-        >
+        <View style={{ alignItems: 'center', gap: 16 }}>
           <Type muted>{query.isPending ? 'Loading…' : 'Achievement unavailable.'}</Type>
           {query.isError && <Button title="Retry" onPress={() => void query.refetch()} />}
         </View>
       )}
       {Platform.OS === 'web' && <Button title="Done" secondary onPress={() => router.back()} />}
-    </View>
+    </ScrollView>
   );
 }

@@ -7,18 +7,14 @@ import { useEffect, useRef, useState } from 'react';
 import { AppState } from 'react-native';
 import { router, type Href } from 'expo-router';
 import * as Notifications from 'expo-notifications';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  attachNotificationListeners,
-  notificationRoute,
-} from './notifications';
+import { attachNotificationListeners, notificationRoute } from './notifications';
 import { syncNotificationRegistration } from './notification-registration';
 import { apiRequest } from './api';
 import { posthog } from './telemetry';
 import { useAuth } from '../providers/auth-provider';
 import { useMockData } from '../providers/mock-data-provider';
 
-import { notificationOfferKey } from './notification-consent';
+import { hasCompletedNotificationSetup, notificationOfferDeferred } from './notification-consent';
 export { notificationOfferKey } from './notification-consent';
 
 export function useNotifications({
@@ -132,8 +128,13 @@ export function useNotifications({
     let active = true;
     const timer = setTimeout(() => {
       void (async () => {
-        const offered = await AsyncStorage.getItem(notificationOfferKey(userId));
-        if (!active || offered || AppState.currentState !== 'active')
+        const completed = await hasCompletedNotificationSetup(userId);
+        if (
+          !active ||
+          completed ||
+          notificationOfferDeferred(userId) ||
+          AppState.currentState !== 'active'
+        )
           return;
         if (active && owner.current === userId) router.push('/notification-setup');
       })().catch(() => {});

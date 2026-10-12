@@ -15,6 +15,11 @@ vi.mock('expo-notifications', () => ({ addPushTokenListener: () => ({ remove() {
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: async () => f.stored, setItem: f.set },
 }));
+vi.mock('./notification-consent', () => ({
+  notificationOfferKey: (userId: string) => `beaver.notification-offer.v4:${userId}`,
+  hasCompletedNotificationSetup: async () => f.stored === 'completed',
+  notificationOfferDeferred: () => false,
+}));
 vi.mock('./notifications', () => ({
   notificationPermissionState: async () => f.permission,
   attachNotificationListeners: () => () => {},
@@ -74,8 +79,8 @@ it('does not mark an invitation shown before its screen actually mounts', async 
   await mount();
   expect(f.set).not.toHaveBeenCalled();
 });
-it('respects dismissal and users with permission already granted', async () => {
-  f.stored = 'shown';
+it('does not reoffer after successfully completed setup', async () => {
+  f.stored = 'completed';
   await mount();
   expect(f.push).not.toHaveBeenCalled();
 });
@@ -91,4 +96,16 @@ it('requests fresh consent even with system permission already granted', async (
 
 it('uses a fresh invitation campaign for accounts created on earlier releases', () => {
   expect(notificationOfferKey('a')).toBe('beaver.notification-offer.v4:a');
+});
+
+it('shows the sheet again when an earlier release only recorded a screen impression', async () => {
+  f.stored = 'shown';
+  await mount();
+  expect(f.push).toHaveBeenCalledWith('/notification-setup');
+});
+
+it('does not mistake legacy accepted consent for completed registration', async () => {
+  f.stored = 'accepted';
+  await mount();
+  expect(f.push).toHaveBeenCalledWith('/notification-setup');
 });

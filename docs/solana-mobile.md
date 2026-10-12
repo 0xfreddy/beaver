@@ -97,9 +97,9 @@ Beaver's private service are paper-settled, so show a real USDC transfer separat
 and label paper investments accurately. The public mock client does not reproduce
 the private execution engine.
 
-A signed build-5 APK is linked in the [README](../README.md). Physical-device
+A signed build-7 APK is linked in the [README](../README.md). Physical-device
 evidence, the demo/presentation and store submission remain outstanding. See
-[release notes](releases/2026-10-12.md) for the precise validation boundary.
+[release notes](releases/2026-10-13.md) for the precise validation boundary.
 
 References: [Solana Mobile React Native integration](https://docs.solanamobile.com/get-started/react-native/invoke-mwa-sessions-directly),
 [compatible wallets](https://wallets.solanamobile.com/).

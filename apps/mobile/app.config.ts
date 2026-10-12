@@ -49,6 +49,13 @@ const withQuotedReactNativeBundleScript: ConfigPlugin = (expoConfig) =>
 const environment = process.env.APP_ENV ?? 'development';
 if (!['development', 'staging', 'production'].includes(environment))
   throw new Error('Invalid APP_ENV');
+// Never produce a store build without its authentication configuration.
+if (environment === 'production') {
+  for (const key of ['EXPO_PUBLIC_PRIVY_APP_ID', 'EXPO_PUBLIC_PRIVY_CLIENT_ID']) {
+    if (!process.env[key]?.trim())
+      throw new Error(`Missing required release configuration: ${key}`);
+  }
+}
 const updateAudience =
   process.env.APP_UPDATE_AUDIENCE === 'ios-testflight' ? 'ios-testflight' : 'none';
 const updateChannel =
@@ -80,6 +87,11 @@ const withDevelopmentTeam: ConfigPlugin = (expoConfig) =>
   });
 const projectId =
   process.env.EXPO_PUBLIC_EAS_PROJECT_ID?.trim() || '';
+// EAS file variables resolve to a temporary path. Keep Firebase configuration out of JS and
+// require it for Android cloud builds so a release cannot silently ship without FCM.
+const googleServicesFile = process.env.GOOGLE_SERVICES_JSON?.trim();
+if (process.env.EAS_BUILD_PLATFORM === 'android' && !googleServicesFile)
+  throw new Error('GOOGLE_SERVICES_JSON is required for Android push notifications');
 const appleSignInEnabled = process.env.EXPO_PUBLIC_APPLE_SIGN_IN_ENABLED === 'true';
 const mockDataEnabled =
   environment !== 'production' && process.env.EXPO_PUBLIC_MOCK_DATA_ENABLED !== 'false';
@@ -122,8 +134,9 @@ const config: ExpoConfig = {
     },
   },
   android: {
-    versionCode: 5,
+    versionCode: 7,
     adaptiveIcon: { foregroundImage: './assets/icon.png', backgroundColor: '#000000' },
+    ...(googleServicesFile ? { googleServicesFile } : {}),
     ...(inviteOrigin
       ? {
           intentFilters: [
@@ -142,6 +155,7 @@ const config: ExpoConfig = {
   plugins: [
     './plugins/with-android-launcher-icon.cjs',
     'expo-router',
+    ['expo-notifications', { defaultChannel: 'default', color: '#FFFFFF' }],
     [
       'expo-build-properties',
       {
